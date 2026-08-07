@@ -191,7 +191,7 @@ interface AppContextValue extends StoredState {
   removeCalendarEntry: (id: string) => Promise<void>;
   updateSettings: (patch: Partial<InstitutionSettings>) => Promise<void>;
   addUser: (data: { name: string; email: string; role: "admin" | "member"; title?: string; area?: string }) => Promise<string | void>;
-  updateUserRole: (id: string, role: "admin" | "member") => Promise<void>;
+  updateUserRole: (id: string, role: "admin" | "member") => Promise<string | void>;
   updateProfile: (patch: { name?: string; title?: string; area?: string }) => Promise<void>;
   removeUser: (id: string) => Promise<string | void>;
   resendInvite: (email: string) => Promise<string | void>;
@@ -706,11 +706,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [logHistory]
   );
 
+  /**
+   * Cambia el rol de una persona con dos candados:
+   *  - Nadie puede quitarse a sí mismo el rol de administrador (evita quedarse fuera).
+   *  - La institución nunca puede quedarse sin ningún administrador.
+   */
   const updateUserRole: AppContextValue["updateUserRole"] = useCallback(async (id, role) => {
-    if (!supabase) return;
-    await supabase.from("profiles").update({ role }).eq("id", id);
-    setState((prev) => ({ ...prev, users: prev.users.map((u) => (u.id === id ? { ...u, role } : u)) }));
-  }, []);
+    if (!supabase) return "Supabase no está configurado";
+    const prev = stateRef.current;
+    const objetivo = prev.users.find((u) => u.id === id);
+    if (!objetivo) return "No se encontró a esa persona.";
+    if (objetivo.role === role) return;
+
+    if (role === "member" && objetivo.role === "admin") {
+      if (id === prev.currentUserId) {
+        return "No puedes quitarte a ti mismo el rol de administrador. Pídeselo a otro administrador.";
+      }
+      const admins = prev.users.filter((u) => u.role === "admin").length;
+      if (admins <= 1) {
+        return "Debe quedar al menos un administrador en la institución.";
+      }
+    }
+
+    const { error } = await supabase.from("profiles").update({ role }).eq("id", id);
+    if (error) return error.message;
+    setState((p) => ({ ...p, users: p.users.map((u) => (u.id === id ? { ...u, role } : u)) }));
+    logHistory(
+      role === "admin" ? "nombró administrador a" : "cambió a miembro del equipo a",
+      objetivo.name,
+      "Equipo"
+    );
+  }, [logHistory]);
 
   /** Cada quien edita su propia ficha; se guarda de verdad en la base de datos. */
   const updateProfile: AppContextValue["updateProfile"] = useCallback(

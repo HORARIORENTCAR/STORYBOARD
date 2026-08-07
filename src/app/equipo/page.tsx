@@ -83,9 +83,20 @@ export default function EquipoPage() {
             <div className="flex items-center gap-3">
               <select
                 value={u.role}
-                onChange={(e) => updateUserRole(u.id, e.target.value as Role)}
+                disabled={u.role === "admin" && (u.id === currentUser?.id || admins <= 1)}
+                title={
+                  u.role === "admin" && u.id === currentUser?.id
+                    ? "No puedes quitarte a ti mismo el rol de administrador"
+                    : u.role === "admin" && admins <= 1
+                    ? "Debe quedar al menos un administrador"
+                    : "Cambiar rol"
+                }
+                onChange={async (e) => {
+                  const err = await updateUserRole(u.id, e.target.value as Role);
+                  if (err) setNotice(err);
+                }}
                 className={cx(
-                  "rounded-full border-0 px-3 py-1 text-xs font-semibold",
+                  "rounded-full border-0 px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60",
                   u.role === "admin" ? "bg-violet-100 text-violet-800" : "bg-ink-100 text-ink-700"
                 )}
               >

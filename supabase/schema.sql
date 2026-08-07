@@ -442,3 +442,30 @@ alter publication supabase_realtime add table public.notifications;
 --   $$ update public.event_tasks set archived = true
 --      where archived = false and status <> 'terminada'
 --      and (current_date - due_date) > (select archive_after_days from public.institution_settings); $$);
+
+-- ============================================================================
+-- CANDADO: la institución nunca puede quedarse sin administradores
+-- (protege incluso si alguien edita la base de datos directamente)
+-- ============================================================================
+create or replace function public.proteger_ultimo_admin()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare admins_restantes int;
+begin
+  -- Solo nos importa cuando alguien deja de ser admin (cambio de rol o borrado).
+  if (TG_OP = 'UPDATE' and OLD.role = 'admin' and NEW.role <> 'admin')
+     or (TG_OP = 'DELETE' and OLD.role = 'admin') then
+    select count(*) into admins_restantes
+      from public.profiles where role = 'admin' and id <> OLD.id;
+    if admins_restantes = 0 then
+      raise exception 'Debe quedar al menos un administrador en la institución.';
+    end if;
+  end if;
+  if TG_OP = 'DELETE' then return OLD; end if;
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_proteger_ultimo_admin on public.profiles;
+create trigger trg_proteger_ultimo_admin
+  before update or delete on public.profiles
+  for each row execute function public.proteger_ultimo_admin();
