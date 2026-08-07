@@ -645,6 +645,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (error) return error.message;
   }, []);
 
+  /**
+   * Sube un archivo al almacenamiento del colegio y devuelve su enlace.
+   * Si algo falla devuelve un texto con el motivo, para mostrarlo en pantalla.
+   */
+  const uploadFile: AppContextValue["uploadFile"] = useCallback(async (file, carpeta) => {
+    if (!supabase) return "Supabase no está configurado";
+    const LIMITE = 25 * 1024 * 1024;
+    if (file.size > LIMITE) return "El archivo supera el límite de 25 MB.";
+    const limpio = file.name.replace(/[^\w.\-]+/g, "_").slice(-80);
+    const ruta = `${carpeta}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${limpio}`;
+    const { error } = await supabase.storage.from("staffboard").upload(ruta, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || undefined,
+    });
+    if (error) {
+      return error.message.toLowerCase().includes("bucket")
+        ? "Falta crear el almacenamiento en Supabase (ejecuta storage-archivos.sql)."
+        : error.message;
+    }
+    const { data } = supabase.storage.from("staffboard").getPublicUrl(ruta);
+    return { url: data.publicUrl, name: file.name };
+  }, []);
+
+  const esImagen = (f: File) => f.type.startsWith("image/");
+
   const addChatMessage: AppContextValue["addChatMessage"] = useCallback(
     async (taskId, text, adjuntos = []) => {
       if (!supabase) return "Supabase no está configurado";
@@ -678,31 +704,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await supabase.rpc("toggle_reaction", { p_message_id: messageId, p_emoji: emoji });
   }, []);
 
-  /**
-   * Sube un archivo al almacenamiento del colegio y devuelve su enlace.
-   * Si algo falla devuelve un texto con el motivo, para mostrarlo en pantalla.
-   */
-  const uploadFile: AppContextValue["uploadFile"] = useCallback(async (file, carpeta) => {
-    if (!supabase) return "Supabase no está configurado";
-    const LIMITE = 25 * 1024 * 1024;
-    if (file.size > LIMITE) return "El archivo supera el límite de 25 MB.";
-    const limpio = file.name.replace(/[^\w.\-]+/g, "_").slice(-80);
-    const ruta = `${carpeta}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${limpio}`;
-    const { error } = await supabase.storage.from("staffboard").upload(ruta, file, {
-      cacheControl: "3600",
-      upsert: false,
-      contentType: file.type || undefined,
-    });
-    if (error) {
-      return error.message.toLowerCase().includes("bucket")
-        ? "Falta crear el almacenamiento en Supabase (ejecuta storage-archivos.sql)."
-        : error.message;
-    }
-    const { data } = supabase.storage.from("staffboard").getPublicUrl(ruta);
-    return { url: data.publicUrl, name: file.name };
-  }, []);
-
-  const esImagen = (f: File) => f.type.startsWith("image/");
 
   /** Sube una evidencia real (foto o documento) a la tarea. */
   const addEvidence: AppContextValue["addEvidence"] = useCallback(
