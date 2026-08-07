@@ -118,3 +118,38 @@ begin
     values (auth.uid(), 'eliminó un archivo de', t.name, 'Tarea');
 end;
 $$;
+
+-- ============================================================================
+-- 7. El estado de una tarea solo lo cambia quien trabaja en ella
+--    (inscritos, líder, dueño del evento o un administrador)
+-- ============================================================================
+create or replace function public.set_exec_status(p_task_id uuid, p_status text)
+returns void language plpgsql security definer set search_path = public as $$
+declare t record; require_evidence boolean; has_evidence boolean; ev record; audience jsonb;
+begin
+  select * into t from public.event_tasks where id = p_task_id for update;
+  if not found then raise exception 'Tarea no encontrada'; end if;
+
+  if not public.is_task_member(p_task_id) then
+    raise exception 'Solo quien trabaja en esta tarea puede cambiar su estado';
+  end if;
+
+  select institution_settings.require_evidence into require_evidence from public.institution_settings;
+  has_evidence := jsonb_array_length(t.evidence) + jsonb_array_length(t.attachments) > 0;
+  if p_status = 'terminada' and require_evidence and not has_evidence then
+    raise exception 'Para cerrar la tarea primero sube una evidencia del trabajo (una foto o un documento)';
+  end if;
+
+  update public.event_tasks set status = p_status where id = p_task_id;
+  select * into ev from public.events where id = t.event_id;
+  select coalesce(jsonb_agg(distinct v), '[]'::jsonb) into audience from (
+    select (s->>'userId') as v from jsonb_array_elements(t.slots) s where (s->>'userId') is not null
+    union select t.leader_id::text where t.leader_id is not null
+    union select ev.created_by::text
+  ) x(v);
+  insert into public.history_log (user_id, action, detail, type)
+    values (auth.uid(), 'cambió el estado de', t.name || ' → ' || replace(p_status, '_', ' '), 'Tarea');
+  insert into public.notifications (title, detail, audience_all, audience_users)
+    values ('Cambio de estado', t.name || ' pasó a ' || replace(p_status, '_', ' '), false, audience);
+end;
+$$;

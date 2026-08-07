@@ -12,6 +12,9 @@ import {
   CalendarClock,
   Users,
   Send,
+  CheckCircle2,
+  RotateCcw,
+  Archive,
 } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { useApp } from "@/lib/store";
@@ -34,11 +37,22 @@ const columns: { key: TaskExecStatus; label: string }[] = [
 export default function EventDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { eventById, tasksForEvent, userById, canSeeEvent, canEditEvent, updateEvent, deleteEvent, duplicateEvent, notify } = useApp();
+  const { eventById, tasksForEvent, userById, canSeeEvent, canEditEvent, updateEvent, deleteEvent, duplicateEvent, loading } = useApp();
   const [editOpen, setEditOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [aviso, setAviso] = useState("");
 
   const event = eventById(params.id);
+
+  // Mientras llegan los datos de la base no podemos afirmar que el evento no exista.
+  if (loading) {
+    return (
+      <Shell>
+        <div className="card p-10 text-center text-sm text-ink-500">Cargando el evento...</div>
+      </Shell>
+    );
+  }
+
   // Un borrador ajeno no debe abrirse ni siquiera conociendo la URL.
   if (event && !canSeeEvent(event)) {
     return (
@@ -72,7 +86,8 @@ export default function EventDetailPage() {
   const editable = canEditEvent(event);
 
   function handleDelete() {
-    deleteEvent(event.id);
+    if (!window.confirm(`¿Eliminar "${event!.name}"? Se borrarán también sus tareas, chats y evidencias. No se puede deshacer.`)) return;
+    deleteEvent(event!.id);
     router.push("/eventos");
   }
 
@@ -81,6 +96,13 @@ export default function EventDetailPage() {
       <button onClick={() => router.push("/eventos")} className="mb-5 flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-900">
         <ArrowLeft className="h-4 w-4" /> Volver a eventos
       </button>
+
+      {aviso && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">
+          <span>{aviso}</span>
+          <button onClick={() => setAviso("")} className="shrink-0 text-brand-700 hover:underline">Cerrar</button>
+        </div>
+      )}
 
       <div className={`card mb-6 overflow-hidden`}>
         <div className={`relative flex h-32 items-center justify-between overflow-hidden px-8 ${tokens.soft}`}>
@@ -118,20 +140,58 @@ export default function EventDetailPage() {
           {editable && (
             <div className="flex flex-wrap items-center gap-2">
               {event.status === "borrador" && (
+                <button onClick={() => updateEvent(event.id, { status: "publicado" })} className="btn-primary">
+                  <Send className="h-4 w-4" /> Publicar
+                </button>
+              )}
+
+              {/* Ciclo de vida completo: borrador -> publicado -> finalizado -> archivado */}
+              {event.status === "publicado" && (
                 <button
                   onClick={() => {
-                    updateEvent(event.id, { status: "publicado" });
-                    notify("Nuevo evento publicado", `${creator?.name ?? "Alguien"} publicó ${event.name}`, "all");
+                    if (window.confirm("¿Dar por finalizado este evento? Seguirá visible, pero se marcará como cerrado.")) {
+                      updateEvent(event.id, { status: "finalizado" });
+                    }
                   }}
-                  className="btn-primary"
+                  className="btn-secondary"
                 >
-                  <Send className="h-4 w-4" /> Publicar
+                  <CheckCircle2 className="h-4 w-4" /> Finalizar
+                </button>
+              )}
+
+              {event.status === "finalizado" && (
+                <>
+                  <button onClick={() => updateEvent(event.id, { status: "publicado" })} className="btn-secondary">
+                    <RotateCcw className="h-4 w-4" /> Reabrir
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (window.confirm("¿Archivar el evento? Dejará de aparecer en el muro, pero no se borra nada.")) {
+                        updateEvent(event.id, { status: "archivado" });
+                      }
+                    }}
+                    className="btn-secondary"
+                  >
+                    <Archive className="h-4 w-4" /> Archivar
+                  </button>
+                </>
+              )}
+
+              {event.status === "archivado" && (
+                <button onClick={() => updateEvent(event.id, { status: "publicado" })} className="btn-secondary">
+                  <RotateCcw className="h-4 w-4" /> Desarchivar
                 </button>
               )}
               <button onClick={() => setEditOpen(true)} className="btn-secondary">
                 <Pencil className="h-4 w-4" /> Editar
               </button>
-              <button onClick={() => duplicateEvent(event.id)} className="btn-secondary">
+              <button
+                onClick={async () => {
+                  await duplicateEvent(event.id);
+                  setAviso("Se creó una copia como borrador, con las mismas tareas y configuración. La encontrarás en Mi espacio.");
+                }}
+                className="btn-secondary"
+              >
                 <Copy className="h-4 w-4" /> Duplicar
               </button>
               <button onClick={handleDelete} className="btn-secondary text-rose-600 hover:bg-rose-50">

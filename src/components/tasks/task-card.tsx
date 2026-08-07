@@ -14,6 +14,8 @@ import { TaskDetailModal } from "./task-detail-modal";
 export function TaskCard({ task, showEventName = false }: { task: EventTask; showEventName?: boolean }) {
   const { userById, eventById, claimSlot, cancelSlot, joinWaitlist, leaveWaitlist, hasEvidence, settings, currentUser } = useApp();
   const [open, setOpen] = useState(false);
+  const [aviso, setAviso] = useState("");
+  const [ocupado, setOcupado] = useState(false);
   const event = eventById(task.eventId);
   const tokens = colorTokens[task.color];
   const { filled, total, pct } = slotProgress(task);
@@ -38,10 +40,18 @@ export function TaskCard({ task, showEventName = false }: { task: EventTask; sho
   const leader = task.leaderId ? userById(task.leaderId) : null;
   const collaborators = task.slots.filter((s) => s.userId).map((s) => userById(s.userId!)).filter(Boolean);
 
+  /** Ejecuta una acción y muestra el motivo si el servidor la rechaza. */
+  async function ejecutar(accion: () => Promise<string | void>) {
+    setAviso("");
+    setOcupado(true);
+    const err = await accion();
+    setOcupado(false);
+    if (err) setAviso(err);
+  }
+
   function handleJoin() {
     const idx = task.slots.findIndex((s) => !s.userId);
-    if (idx >= 0) claimSlot(task.id, idx);
-    else joinWaitlist(task.id);
+    ejecutar(() => (idx >= 0 ? claimSlot(task.id, idx) : joinWaitlist(task.id)));
   }
 
   return (
@@ -120,7 +130,8 @@ export function TaskCard({ task, showEventName = false }: { task: EventTask; sho
                 </span>
               </p>
               <button
-                onClick={() => cancelSlot(task.id)}
+                onClick={() => ejecutar(() => cancelSlot(task.id))}
+                disabled={ocupado}
                 className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100"
               >
                 <RotateCcw className="h-3.5 w-3.5" /> Deshacer inscripción
@@ -131,17 +142,20 @@ export function TaskCard({ task, showEventName = false }: { task: EventTask; sho
               <CheckCircle2 className="h-3.5 w-3.5" /> Ver detalle de mi tarea
             </button>
           ) : inWaitlist ? (
-            <button onClick={() => leaveWaitlist(task.id)} className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-amber-700 hover:underline">
+            <button onClick={() => ejecutar(() => leaveWaitlist(task.id))} disabled={ocupado} className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-amber-700 hover:underline disabled:opacity-60">
               <Hourglass className="h-3.5 w-3.5" /> En espera · puesto {waitPos} — salir
             </button>
           ) : full ? (
-            <button onClick={() => joinWaitlist(task.id)} className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-ink-500 hover:underline">
+            <button onClick={() => ejecutar(() => joinWaitlist(task.id))} disabled={ocupado} className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-ink-500 hover:underline disabled:opacity-60">
               <Hourglass className="h-3.5 w-3.5" /> Llena — apuntarme a la lista de espera
             </button>
           ) : (
-            <button onClick={handleJoin} className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-brand-700 hover:underline">
-              <UserPlus className="h-3.5 w-3.5" /> Inscribirme
+            <button onClick={handleJoin} disabled={ocupado} className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-brand-700 hover:underline disabled:opacity-60">
+              <UserPlus className="h-3.5 w-3.5" /> {ocupado ? "Inscribiendo..." : "Inscribirme"}
             </button>
+          )}
+          {aviso && (
+            <p className="mt-2 rounded-lg bg-rose-50 px-2.5 py-1.5 text-center text-xs font-medium text-rose-700">{aviso}</p>
           )}
         </div>
       </div>

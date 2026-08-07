@@ -66,6 +66,8 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
     event?.createdBy,
   ].filter((x): x is string => !!x);
   const canWrite = team.includes(currentUser?.id ?? "") || isAdmin;
+  /** El avance lo marca quien trabaja en la tarea, no solo la administración. */
+  const puedeCambiarEstado = canManage || canWrite;
 
   useEffect(() => {
     const id = setInterval(() => forceTick((v) => v + 1), 1000);
@@ -76,8 +78,17 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
     if (tab === "chat") chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [tab, task.chat.length]);
 
+  /** Ejecuta una acción y, si el servidor la rechaza, muestra por qué. */
+  async function ejecutar(accion: () => Promise<string | void>) {
+    setAviso("");
+    setSubiendo(true);
+    const err = await accion();
+    setSubiendo(false);
+    if (err) setAviso(err);
+  }
+
   function handleJoin(idx: number) {
-    claimSlot(task.id, idx);
+    ejecutar(() => claimSlot(task.id, idx));
   }
 
   async function handleSend(e: React.FormEvent) {
@@ -98,6 +109,16 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
 
   return (
     <Modal open={open} onClose={onClose} eyebrow={event?.name ?? "Tarea"} title={task.name} size="lg">
+      {aviso && (
+        <div className="-mt-2 mb-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{aviso}</span>
+          <button onClick={() => setAviso("")} aria-label="Cerrar aviso" className="text-rose-500 hover:text-rose-700">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       <div className="-mt-2 mb-4 flex flex-wrap items-center gap-2">
         <ExecStatusPill status={task.status} />
         <PriorityPill priority={task.priority} />
@@ -116,7 +137,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             </span>
           </p>
           <button
-            onClick={() => cancelSlot(task.id)}
+            onClick={() => ejecutar(() => cancelSlot(task.id))}
             className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
           >
             <RotateCcw className="h-3.5 w-3.5" /> Deshacer
@@ -205,7 +226,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                     {user ? (
                       isMe && canStillCancel(slot.claimedAt, settings.cancelWindowMinutes) ? (
                         <button
-                          onClick={() => cancelSlot(task.id)}
+                          onClick={() => ejecutar(() => cancelSlot(task.id))}
                           className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline"
                         >
                           <RotateCcw className="h-3 w-3" /> Deshacer ·{" "}
@@ -258,7 +279,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                           {isMe && <span className="badge bg-amber-100 text-amber-800">Tú</span>}
                         </div>
                         {isMe && (
-                          <button onClick={() => leaveWaitlist(task.id)} className="flex items-center gap-1 text-xs font-medium text-rose-600 hover:underline">
+                          <button onClick={() => ejecutar(() => leaveWaitlist(task.id))} className="flex items-center gap-1 text-xs font-medium text-rose-600 hover:underline">
                             <X className="h-3 w-3" /> Salir
                           </button>
                         )}
@@ -268,7 +289,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                 </div>
               )}
               {!mySlot && !inWaitlist && full && (
-                <button onClick={() => joinWaitlist(task.id)} className="btn-secondary mt-3 w-full">
+                <button onClick={() => ejecutar(() => joinWaitlist(task.id))} className="btn-secondary mt-3 w-full">
                   <Hourglass className="h-4 w-4" /> Apuntarme a la lista de espera
                 </button>
               )}
@@ -280,7 +301,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             </div>
           )}
 
-          {canManage && (
+          {puedeCambiarEstado && (
             <div>
               <p className="label">Estado de ejecución</p>
               <div className="flex gap-2">
@@ -289,7 +310,14 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                   return (
                     <button
                       key={s}
-                      onClick={() => (blocked ? setTab("evidencias") : setExecStatus(task.id, s))}
+                      onClick={() => {
+                        if (blocked) {
+                          setAviso("Para cerrar la tarea primero sube una evidencia del trabajo (una foto o un documento).");
+                          setTab("evidencias");
+                          return;
+                        }
+                        ejecutar(() => setExecStatus(task.id, s));
+                      }}
                       title={blocked ? "Sube una evidencia para poder cerrar la tarea" : undefined}
                       className={cx(
                         "flex flex-1 items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-medium transition-colors",
@@ -492,14 +520,14 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             <div
               className={cx(
                 "flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm leading-relaxed",
-                hasEvidence(task) ? "border-brand-200 bg-brand-50 text-brand-800" : "border-amber-200 bg-amber-50 text-amber-800"
+                hasEvidence(task) ? "border-brand-200 bg-brand-50 text-brand-800" : "border-ink-200 bg-ink-50 text-ink-600"
               )}
             >
-              {hasEvidence(task) ? <ImagePlus className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />}
+              {hasEvidence(task) ? <ImagePlus className="mt-0.5 h-4 w-4 shrink-0" /> : <ImagePlus className="mt-0.5 h-4 w-4 shrink-0" />}
               <span>
                 {hasEvidence(task)
                   ? "Esta tarea ya tiene evidencia registrada, puede darse por terminada."
-                  : "Se requiere evidencia. Sube al menos una foto o documento para poder marcarla como terminada."}
+                  : "Cuando termines el trabajo, sube aquí una foto o un documento. Solo hará falta al momento de marcarla como Terminada."}
               </span>
             </div>
           )}
