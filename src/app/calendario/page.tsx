@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Download, Sprout, Trash2 } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Plus, Download, Sprout, Trash2, Upload, FileText, X } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { useApp } from "@/lib/store";
@@ -31,9 +31,12 @@ function buildMonthGrid(year: number, month: number) {
 }
 
 export default function CalendarioPage() {
-  const { calendar, addCalendarEntry, removeCalendarEntry, isAdmin } = useApp();
+  const { calendar, addCalendarEntry, removeCalendarEntry, isAdmin, settings, updateSettings, uploadFile } = useApp();
   const [cursor, setCursor] = useState(new Date(2026, 7, 1));
   const [createOpen, setCreateOpen] = useState(false);
+  const [subiendoOficial, setSubiendoOficial] = useState(false);
+  const [avisoOficial, setAvisoOficial] = useState("");
+  const oficialRef = useRef<HTMLInputElement>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const year = cursor.getFullYear();
@@ -91,11 +94,77 @@ export default function CalendarioPage() {
         title="Calendario institucional"
         description="Fechas, reuniones y actividades importantes en un solo lugar."
         actions={
-          <button onClick={exportarCalendario} className="btn-secondary">
-            <Download className="h-4 w-4" /> Exportar calendario
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {isAdmin && (
+              <button
+                onClick={() => oficialRef.current?.click()}
+                disabled={subiendoOficial}
+                className="btn-secondary"
+              >
+                <Upload className="h-4 w-4" />
+                {subiendoOficial ? "Subiendo..." : "Subir calendario oficial"}
+              </button>
+            )}
+            <button onClick={exportarCalendario} className="btn-secondary">
+              <Download className="h-4 w-4" /> Exportar calendario
+            </button>
+          </div>
         }
       />
+
+      <input
+        ref={oficialRef}
+        type="file"
+        accept=".pdf,image/*,.xls,.xlsx,.csv"
+        hidden
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (!f) return;
+          setSubiendoOficial(true);
+          setAvisoOficial("");
+          const r = await uploadFile(f, "calendario-oficial");
+          if (typeof r === "string") {
+            setAvisoOficial(r);
+          } else {
+            await updateSettings({ officialCalendarUrl: r.url, officialCalendarName: r.name });
+          }
+          setSubiendoOficial(false);
+        }}
+      />
+
+      {avisoOficial && (
+        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{avisoOficial}</div>
+      )}
+
+      {settings.officialCalendarUrl && (
+        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-brand-200 bg-brand-50 px-4 py-3">
+          <FileText className="h-5 w-5 shrink-0 text-brand-700" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-brand-900">Calendario oficial del colegio</p>
+            <a
+              href={settings.officialCalendarUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate text-xs text-brand-700 hover:underline"
+            >
+              {settings.officialCalendarName ?? "Abrir documento"}
+            </a>
+          </div>
+          <a href={settings.officialCalendarUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary !py-1.5 !text-xs">
+            <Download className="h-3.5 w-3.5" /> Abrir
+          </a>
+          {isAdmin && (
+            <button
+              onClick={() => updateSettings({ officialCalendarUrl: "", officialCalendarName: "" })}
+              aria-label="Quitar calendario oficial"
+              className="text-ink-400 hover:text-rose-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <div className="card p-5">

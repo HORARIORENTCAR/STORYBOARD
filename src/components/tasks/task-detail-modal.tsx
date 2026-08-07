@@ -20,10 +20,32 @@ const statusLabel: Record<TaskExecStatus, string> = {
 };
 
 export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClose: () => void; task: EventTask }) {
-  const { userById, eventById, currentUser, isAdmin, canDeleteTask, claimSlot, cancelSlot, joinWaitlist, leaveWaitlist, hasEvidence, canFinishTask, setExecStatus, addChatMessage, toggleReaction, addEvidence, deleteTask, settings } =
+  const { userById, eventById, currentUser, isAdmin, canDeleteTask, claimSlot, cancelSlot, joinWaitlist, leaveWaitlist, hasEvidence, canFinishTask, setExecStatus, addChatMessage, toggleReaction, addEvidence, removeEvidence, deleteTask, settings } =
     useApp();
   const [tab, setTab] = useState<"detalle" | "chat" | "evidencias">("detalle");
   const [message, setMessage] = useState("");
+  const [subiendo, setSubiendo] = useState(false);
+  const [aviso, setAviso] = useState("");
+  const [adjuntos, setAdjuntos] = useState<File[]>([]);
+  const fotoRef = useRef<HTMLInputElement>(null);
+  const docRef = useRef<HTMLInputElement>(null);
+  const chatFotoRef = useRef<HTMLInputElement>(null);
+  const chatDocRef = useRef<HTMLInputElement>(null);
+
+  /** Sube uno o varios archivos como evidencia de la tarea. */
+  async function subirEvidencias(lista: FileList | null) {
+    if (!lista || lista.length === 0) return;
+    setSubiendo(true);
+    setAviso("");
+    for (const f of Array.from(lista)) {
+      const err = await addEvidence(task.id, f);
+      if (err) {
+        setAviso(err);
+        break;
+      }
+    }
+    setSubiendo(false);
+  }
   const [, forceTick] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -58,12 +80,20 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
     claimSlot(task.id, idx);
   }
 
-  function handleSend(e: React.FormEvent) {
+  async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (!message.trim()) return;
     if (!canWrite) return;
-    addChatMessage(task.id, message.trim());
+    if (!message.trim() && adjuntos.length === 0) return;
+    setSubiendo(true);
+    setAviso("");
+    const err = await addChatMessage(task.id, message.trim(), adjuntos);
+    setSubiendo(false);
+    if (err) {
+      setAviso(err);
+      return;
+    }
     setMessage("");
+    setAdjuntos([]);
   }
 
   return (
@@ -112,6 +142,21 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
       {tab === "detalle" && (
         <div className="space-y-6">
           <p className="text-sm leading-relaxed text-ink-600">{task.description || "Sin descripción adicional."}</p>
+
+          {task.referenceImage && (
+            <div>
+              <p className="mb-2 text-sm font-medium text-ink-700">Imagen de referencia</p>
+              <a href={task.referenceImage} target="_blank" rel="noopener noreferrer" className="block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={task.referenceImage}
+                  alt="Referencia de cómo debe quedar el trabajo"
+                  className="max-h-56 w-full rounded-xl border border-ink-100 object-cover"
+                />
+              </a>
+              <p className="mt-1.5 text-xs text-ink-400">Así debe quedar el trabajo. Toca la imagen para verla completa.</p>
+            </div>
+          )}
 
           {task.requiresLeader && (
             <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
@@ -304,6 +349,37 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                     <div className={cx("rounded-2xl px-3.5 py-2.5 text-sm", mine ? "bg-brand-700 text-white" : "bg-ink-100 text-ink-800")}>
                       {!mine && <p className="mb-0.5 text-xs font-semibold text-brand-700">{author?.name}</p>}
                       {m.text}
+
+                      {(m.attachments ?? []).length > 0 && (
+                        <div className={cx("space-y-2", m.text && "mt-2")}>
+                          {(m.attachments ?? []).map((a) =>
+                            a.type === "image" && a.url ? (
+                              <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer" className="block">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={a.url}
+                                  alt={a.name}
+                                  className="max-h-52 w-full rounded-xl border border-black/10 object-cover"
+                                />
+                              </a>
+                            ) : (
+                              <a
+                                key={a.id}
+                                href={a.url ?? "#"}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={cx(
+                                  "flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs",
+                                  mine ? "bg-white/15 hover:bg-white/25" : "bg-white hover:bg-ink-50"
+                                )}
+                              >
+                                <FileText className="h-3.5 w-3.5 shrink-0" />
+                                <span className="truncate">{a.name}</span>
+                              </a>
+                            )
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className={cx("mt-1 flex items-center gap-2 text-[11px] text-ink-400", mine && "justify-end")}>
                       <span>{timeAgo(m.createdAt)}</span>
@@ -338,33 +414,68 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
               </span>
             </div>
           ) : (
-          <form onSubmit={handleSend} className="mt-3 flex items-center gap-2 border-t border-ink-100 pt-3">
-            <button
-              type="button"
-              onClick={() => addEvidence(task.id, "foto-avance.jpg", "image")}
-              className="btn-ghost !px-2.5"
-              title="Adjuntar imagen"
-            >
-              <ImagePlus className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => addEvidence(task.id, "documento.pdf", "file")}
-              className="btn-ghost !px-2.5"
-              title="Adjuntar archivo"
-            >
-              <Paperclip className="h-4 w-4" />
-            </button>
-            <input
-              className="input flex-1"
-              placeholder="Escribe un mensaje..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-            />
-            <button type="submit" className="btn-primary !px-3.5">
-              <Send className="h-4 w-4" />
-            </button>
-          </form>
+          <div className="mt-3 border-t border-ink-100 pt-3">
+            {adjuntos.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {adjuntos.map((f, i) => (
+                  <span
+                    key={`${f.name}-${i}`}
+                    className="flex max-w-[220px] items-center gap-1.5 rounded-lg bg-ink-100 px-2 py-1 text-xs text-ink-700"
+                  >
+                    {f.type.startsWith("image/") ? <ImagePlus className="h-3 w-3 shrink-0" /> : <FileText className="h-3 w-3 shrink-0" />}
+                    <span className="truncate">{f.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setAdjuntos((prev) => prev.filter((_, j) => j !== i))}
+                      aria-label={`Quitar ${f.name}`}
+                      className="text-ink-400 hover:text-rose-600"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <form onSubmit={handleSend} className="flex items-center gap-2">
+              <input
+                ref={chatFotoRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => {
+                  setAdjuntos((prev) => [...prev, ...Array.from(e.target.files ?? [])]);
+                  e.target.value = "";
+                }}
+              />
+              <input
+                ref={chatDocRef}
+                type="file"
+                multiple
+                hidden
+                onChange={(e) => {
+                  setAdjuntos((prev) => [...prev, ...Array.from(e.target.files ?? [])]);
+                  e.target.value = "";
+                }}
+              />
+              <button type="button" onClick={() => chatFotoRef.current?.click()} className="btn-ghost !px-2.5" title="Compartir fotografía">
+                <ImagePlus className="h-4 w-4" />
+              </button>
+              <button type="button" onClick={() => chatDocRef.current?.click()} className="btn-ghost !px-2.5" title="Compartir documento">
+                <Paperclip className="h-4 w-4" />
+              </button>
+              <input
+                className="input flex-1"
+                placeholder="Escribe un mensaje..."
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+              />
+              <button type="submit" disabled={subiendo} className="btn-primary !px-3.5">
+                {subiendo ? <Hourglass className="h-4 w-4 animate-pulse" /> : <Send className="h-4 w-4" />}
+              </button>
+            </form>
+            {aviso && <p className="mt-2 text-xs font-medium text-rose-600">{aviso}</p>}
+          </div>
           )}
           {canWrite && (
             <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-400">
@@ -392,47 +503,138 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
               </span>
             </div>
           )}
+          {aviso && (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700">{aviso}</p>
+          )}
+
+          <input
+            ref={fotoRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              subirEvidencias(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={docRef}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              subirEvidencias(e.target.files);
+              e.target.value = "";
+            }}
+          />
+
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-ink-700">Fotografías de avance</p>
-            <button onClick={() => addEvidence(task.id, "evidencia.jpg", "image")} className="btn-secondary !py-1.5 !text-xs">
-              <ImagePlus className="h-3.5 w-3.5" /> Subir foto
+            <button
+              onClick={() => fotoRef.current?.click()}
+              disabled={subiendo}
+              className="btn-secondary !py-1.5 !text-xs"
+            >
+              <ImagePlus className="h-3.5 w-3.5" /> {subiendo ? "Subiendo..." : "Subir foto"}
             </button>
           </div>
           {task.evidence.length === 0 ? (
             <p className="text-sm text-ink-400">No se han subido evidencias aún.</p>
           ) : (
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-              {task.evidence.map((ev) => (
-                <div key={ev.id} className="aspect-square rounded-xl bg-gradient-to-br from-brand-100 to-brand-50 p-3">
-                  <div className="flex h-full flex-col items-center justify-center text-center">
-                    <ImagePlus className="mb-1 h-5 w-5 text-brand-600" />
-                    <p className="truncate text-[11px] font-medium text-ink-700">{ev.name}</p>
-                    <p className="text-[10px] text-ink-400">{timeAgo(ev.uploadedAt)}</p>
+              {task.evidence.map((ev) => {
+                const autor = userById(ev.uploadedBy);
+                const puedeBorrar = isAdmin || canManage || ev.uploadedBy === currentUser?.id;
+                return (
+                  <div key={ev.id} className="group relative overflow-hidden rounded-xl border border-ink-100">
+                    {ev.url ? (
+                      <a href={ev.url} target="_blank" rel="noopener noreferrer" title={`${ev.name} · ${autor?.name ?? ""}`}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={ev.url} alt={ev.name} className="aspect-square w-full object-cover" />
+                      </a>
+                    ) : (
+                      <div className="flex aspect-square flex-col items-center justify-center bg-gradient-to-br from-brand-100 to-brand-50 p-3 text-center">
+                        <ImagePlus className="mb-1 h-5 w-5 text-brand-600" />
+                        <p className="truncate text-[11px] font-medium text-ink-700">{ev.name}</p>
+                      </div>
+                    )}
+                    <div className="bg-white px-2 py-1.5">
+                      <p className="truncate text-[11px] font-medium text-ink-700">{ev.name}</p>
+                      <p className="truncate text-[10px] text-ink-400">
+                        {autor?.name ?? "—"} · {timeAgo(ev.uploadedAt)}
+                      </p>
+                    </div>
+                    {puedeBorrar && (
+                      <button
+                        onClick={async () => {
+                          const err = await removeEvidence(task.id, ev.id);
+                          if (err) setAviso(err);
+                        }}
+                        aria-label={`Eliminar ${ev.name}`}
+                        className="absolute right-1.5 top-1.5 rounded-lg bg-white/90 p-1 text-rose-600 opacity-0 shadow transition-opacity group-hover:opacity-100"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
           <div className="flex items-center justify-between border-t border-ink-100 pt-5">
             <p className="text-sm font-medium text-ink-700">Documentos adjuntos</p>
-            <button onClick={() => addEvidence(task.id, "informe.pdf", "file")} className="btn-secondary !py-1.5 !text-xs">
-              <Paperclip className="h-3.5 w-3.5" /> Subir archivo
+            <button
+              onClick={() => docRef.current?.click()}
+              disabled={subiendo}
+              className="btn-secondary !py-1.5 !text-xs"
+            >
+              <Paperclip className="h-3.5 w-3.5" /> {subiendo ? "Subiendo..." : "Subir archivo"}
             </button>
           </div>
           {task.attachments.length === 0 ? (
             <p className="text-sm text-ink-400">No hay documentos adjuntos.</p>
           ) : (
             <div className="space-y-2">
-              {task.attachments.map((doc) => (
-                <div key={doc.id} className="flex items-center gap-3 rounded-xl border border-ink-100 px-3 py-2.5">
-                  <FileText className="h-4 w-4 text-ink-500" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink-800">{doc.name}</p>
-                    <p className="text-xs text-ink-400">{timeAgo(doc.uploadedAt)}</p>
+              {task.attachments.map((doc) => {
+                const autor = userById(doc.uploadedBy);
+                const puedeBorrar = isAdmin || canManage || doc.uploadedBy === currentUser?.id;
+                return (
+                  <div key={doc.id} className="flex items-center gap-3 rounded-xl border border-ink-100 px-3 py-2.5">
+                    <FileText className="h-4 w-4 shrink-0 text-ink-500" />
+                    <div className="min-w-0 flex-1">
+                      {doc.url ? (
+                        <a
+                          href={doc.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block truncate text-sm font-medium text-brand-700 hover:underline"
+                        >
+                          {doc.name}
+                        </a>
+                      ) : (
+                        <p className="truncate text-sm font-medium text-ink-800">{doc.name}</p>
+                      )}
+                      <p className="truncate text-xs text-ink-400">
+                        {autor?.name ?? "—"} · {timeAgo(doc.uploadedAt)}
+                      </p>
+                    </div>
+                    {puedeBorrar && (
+                      <button
+                        onClick={async () => {
+                          const err = await removeEvidence(task.id, doc.id);
+                          if (err) setAviso(err);
+                        }}
+                        aria-label={`Eliminar ${doc.name}`}
+                        className="shrink-0 text-ink-400 hover:text-rose-600"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

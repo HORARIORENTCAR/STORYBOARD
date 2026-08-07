@@ -22,6 +22,8 @@ export interface SchoolEvent {
   name: string;
   description: string;
   coverEmoji: string;
+  /** Imagen de portada opcional (además del emoji). */
+  coverImage?: string;
   color: EventColor;
   createdAt: string;
   eventDate: string;
@@ -45,12 +47,16 @@ export interface ChatMessage {
   text: string;
   createdAt: string;
   reactions: Partial<Record<"👍" | "❤️" | "✅", string[]>>; // emoji -> userIds
+  /** Fotos y documentos compartidos dentro del mensaje. */
+  attachments?: EvidenceItem[];
 }
 
 export interface EvidenceItem {
   id: string;
   type: "image" | "file";
   name: string;
+  /** Enlace real al archivo guardado. Ausente en datos antiguos. */
+  url?: string;
   uploadedBy: string;
   uploadedAt: string;
 }
@@ -65,6 +71,8 @@ export interface EventTask {
   status: TaskExecStatus;
   dueDate: string;
   maxCollaborators: number;
+  /** Imagen de referencia de cómo debe quedar el trabajo. */
+  referenceImage?: string;
   slots: TaskSlot[];
   requiresLeader: boolean;
   leaderId: string | null;

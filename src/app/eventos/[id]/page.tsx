@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { useApp } from "@/lib/store";
-import { colorTokens, formatFullDate } from "@/lib/utils";
+import { colorTokens, cx, formatFullDate } from "@/lib/utils";
 import { eventProgress } from "@/lib/task-helpers";
 import { EventStatusPill } from "@/components/ui/pills";
 import { ProgressBar } from "@/components/ui/progress";
@@ -83,9 +83,18 @@ export default function EventDetailPage() {
       </button>
 
       <div className={`card mb-6 overflow-hidden`}>
-        <div className={`flex h-32 items-center justify-between px-8 ${tokens.soft}`}>
-          <span className="text-6xl">{event.coverEmoji}</span>
-          <EventStatusPill status={event.status} />
+        <div className={`relative flex h-32 items-center justify-between overflow-hidden px-8 ${tokens.soft}`}>
+          {event.coverImage && (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={event.coverImage} alt="" className="absolute inset-0 h-full w-full object-cover" />
+              <span className="absolute inset-0 bg-gradient-to-r from-black/50 to-black/10" />
+            </>
+          )}
+          <span className={cx("relative text-6xl", event.coverImage && "drop-shadow-lg")}>{event.coverEmoji}</span>
+          <span className="relative">
+            <EventStatusPill status={event.status} />
+          </span>
         </div>
         <div className="flex flex-wrap items-start justify-between gap-4 p-6">
           <div className="max-w-2xl">

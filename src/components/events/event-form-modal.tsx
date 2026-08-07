@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { useApp } from "@/lib/store";
 import { EventColor, EventStatus, SchoolEvent } from "@/lib/types";
-import { Image as ImageIcon } from "lucide-react";
+import { X, Upload } from "lucide-react";
 import { cx } from "@/lib/utils";
 
 const colorOptions: { value: EventColor; hex: string }[] = [
@@ -26,7 +26,7 @@ export function EventFormModal({
   onClose: () => void;
   event?: SchoolEvent;
 }) {
-  const { createEvent, updateEvent } = useApp();
+  const { createEvent, updateEvent, uploadFile } = useApp();
   const isEdit = !!event;
 
   const [name, setName] = useState("");
@@ -36,6 +36,10 @@ export function EventFormModal({
   const [status, setStatus] = useState<EventStatus>("borrador");
   const [color, setColor] = useState<EventColor>("brand");
   const [emoji, setEmoji] = useState("📌");
+  const [coverImage, setCoverImage] = useState<string>("");
+  const [subiendo, setSubiendo] = useState(false);
+  const [aviso, setAviso] = useState("");
+  const portadaRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
@@ -46,6 +50,8 @@ export function EventFormModal({
       setStatus(event?.status ?? "borrador");
       setColor(event?.color ?? "brand");
       setEmoji(event?.coverEmoji ?? "📌");
+      setCoverImage(event?.coverImage ?? "");
+      setAviso("");
     }
   }, [open, event]);
 
@@ -53,9 +59,9 @@ export function EventFormModal({
     e.preventDefault();
     if (!name.trim()) return;
     if (isEdit && event) {
-      updateEvent(event.id, { name, description, eventDate, dueDate: dueDate || undefined, status, color, coverEmoji: emoji });
+      updateEvent(event.id, { name, description, eventDate, dueDate: dueDate || undefined, status, color, coverEmoji: emoji, coverImage });
     } else {
-      createEvent({ name, description, eventDate, dueDate: dueDate || undefined, status, color, coverEmoji: emoji });
+      createEvent({ name, description, eventDate, dueDate: dueDate || undefined, status, color, coverEmoji: emoji, coverImage });
     }
     onClose();
   }
@@ -139,9 +145,54 @@ export function EventFormModal({
               </button>
             ))}
           </div>
-          <div className="mt-2 flex items-center gap-2 rounded-xl border border-dashed border-ink-300 px-3 py-2.5 text-xs text-ink-400">
-            <ImageIcon className="h-4 w-4" /> PNG o JPG, máximo 5 MB (opcional)
-          </div>
+          <input
+            ref={portadaRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              setSubiendo(true);
+              setAviso("");
+              const r = await uploadFile(f, "portadas");
+              setSubiendo(false);
+              if (typeof r === "string") setAviso(r);
+              else setCoverImage(r.url);
+            }}
+          />
+
+          {coverImage ? (
+            <div className="relative mt-2 overflow-hidden rounded-xl border border-ink-200">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={coverImage} alt="Portada del evento" className="h-32 w-full object-cover" />
+              <button
+                type="button"
+                onClick={() => setCoverImage("")}
+                aria-label="Quitar imagen de portada"
+                className="absolute right-2 top-2 rounded-lg bg-white/90 p-1.5 text-rose-600 shadow"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => portadaRef.current?.click()}
+              disabled={subiendo}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-ink-300 px-3 py-3 text-xs text-ink-500 transition-colors hover:border-brand-400 hover:bg-brand-50/50 disabled:opacity-60"
+            >
+              {subiendo ? (
+                <>Subiendo imagen...</>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" /> Subir imagen de portada (opcional)
+                </>
+              )}
+            </button>
+          )}
+          {aviso && <p className="mt-1.5 text-xs font-medium text-rose-600">{aviso}</p>}
         </div>
         <div className="flex justify-end gap-2 border-t border-ink-100 pt-5">
           <button type="button" onClick={onClose} className="btn-secondary">

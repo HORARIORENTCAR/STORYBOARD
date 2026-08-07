@@ -25,8 +25,17 @@ export function EventCard({ event }: { event: SchoolEvent }) {
       href={`/eventos/${event.id}`}
       className="card group flex flex-col overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-pop"
     >
-      <div className={`relative flex h-28 items-center justify-center ${tokens.soft}`}>
-        <span className="text-4xl">{event.coverEmoji}</span>
+      <div className={`relative flex h-28 items-center justify-center overflow-hidden ${tokens.soft}`}>
+        {event.coverImage ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={event.coverImage} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <span className="absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
+            <span className="relative text-3xl drop-shadow">{event.coverEmoji}</span>
+          </>
+        ) : (
+          <span className="text-4xl">{event.coverEmoji}</span>
+        )}
         <span className="absolute left-3 top-3">
           <EventStatusPill status={event.status} />
         </span>

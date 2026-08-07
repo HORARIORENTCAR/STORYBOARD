@@ -16,6 +16,9 @@ import { dueLabel, isDueSoon, shouldArchive } from "./task-helpers";
 
 interface InstitutionSettings {
   name: string;
+  /** Calendario oficial del colegio (PDF, imagen o Excel) como referencia. */
+  officialCalendarUrl?: string;
+  officialCalendarName?: string;
   domain: string;
   schoolYear: string;
   timezone: string;
@@ -90,6 +93,7 @@ function mapEvent(r: any, taskIds: string[]): SchoolEvent {
     name: r.name,
     description: r.description,
     coverEmoji: r.cover_emoji,
+    coverImage: r.cover_image ?? undefined,
     color: r.color,
     createdAt: r.created_date,
     eventDate: r.event_date,
@@ -100,7 +104,14 @@ function mapEvent(r: any, taskIds: string[]): SchoolEvent {
   };
 }
 function mapChat(r: any): ChatMessage {
-  return { id: r.id, authorId: r.author_id, text: r.text, createdAt: r.created_at, reactions: r.reactions ?? {} };
+  return {
+    id: r.id,
+    authorId: r.author_id,
+    text: r.text,
+    createdAt: r.created_at,
+    reactions: r.reactions ?? {},
+    attachments: r.attachments ?? [],
+  };
 }
 function mapTask(r: any, chat: ChatMessage[]): EventTask {
   return {
@@ -113,6 +124,7 @@ function mapTask(r: any, chat: ChatMessage[]): EventTask {
     status: r.status,
     dueDate: r.due_date,
     maxCollaborators: r.max_collaborators,
+    referenceImage: r.reference_image ?? undefined,
     slots: r.slots ?? [],
     requiresLeader: r.requires_leader,
     leaderId: r.leader_id,
@@ -143,6 +155,8 @@ function mapHistory(r: any): HistoryEntry {
 function mapSettings(r: any): InstitutionSettings {
   return {
     name: r.name,
+    officialCalendarUrl: r.official_calendar_url ?? undefined,
+    officialCalendarName: r.official_calendar_name ?? undefined,
     domain: r.domain,
     schoolYear: r.school_year,
     timezone: r.timezone,
@@ -184,9 +198,12 @@ interface AppContextValue extends StoredState {
   runDeadlineAlerts: () => Promise<number>;
   notify: (title: string, detail: string, audience?: "all" | string[]) => Promise<void>;
   setExecStatus: (taskId: string, status: TaskExecStatus) => Promise<string | void>;
-  addChatMessage: (taskId: string, text: string) => Promise<string | void>;
+  addChatMessage: (taskId: string, text: string, adjuntos?: File[]) => Promise<string | void>;
   toggleReaction: (taskId: string, messageId: string, emoji: "👍" | "❤️" | "✅") => Promise<void>;
-  addEvidence: (taskId: string, name: string, type: "image" | "file") => Promise<void>;
+  /** Sube un archivo real y devuelve su enlace público. */
+  uploadFile: (file: File, carpeta: string) => Promise<{ url: string; name: string } | string>;
+  addEvidence: (taskId: string, file: File) => Promise<string | void>;
+  removeEvidence: (taskId: string, itemId: string) => Promise<string | void>;
   addCalendarEntry: (entry: Omit<CalendarEntry, "id">) => Promise<void>;
   removeCalendarEntry: (id: string) => Promise<void>;
   updateSettings: (patch: Partial<InstitutionSettings>) => Promise<void>;
@@ -440,6 +457,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           name: data.name,
           description: data.description ?? "",
           cover_emoji: data.coverEmoji ?? "📌",
+          cover_image: data.coverImage ?? null,
           color: data.color ?? "brand",
           event_date: data.eventDate ?? new Date().toISOString().slice(0, 10),
           due_date: data.dueDate ?? null,
@@ -463,6 +481,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (patch.name !== undefined) dbPatch.name = patch.name;
       if (patch.description !== undefined) dbPatch.description = patch.description;
       if (patch.coverEmoji !== undefined) dbPatch.cover_emoji = patch.coverEmoji;
+      if (patch.coverImage !== undefined) dbPatch.cover_image = patch.coverImage || null;
       if (patch.color !== undefined) dbPatch.color = patch.color;
       if (patch.eventDate !== undefined) dbPatch.event_date = patch.eventDate;
       if (patch.dueDate !== undefined) dbPatch.due_date = patch.dueDate;
@@ -500,6 +519,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           name: `${event.name} · nueva edición`,
           description: event.description,
           cover_emoji: event.coverEmoji,
+          cover_image: event.coverImage ?? null,
           color: event.color,
           event_date: event.eventDate,
           due_date: event.dueDate ?? null,
@@ -520,6 +540,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             status: "sin_iniciar",
             due_date: t.dueDate,
             max_collaborators: t.maxCollaborators,
+            reference_image: t.referenceImage ?? null,
             slots: t.slots.map(() => ({ userId: null, claimedAt: null })),
             requires_leader: t.requiresLeader,
             leader_id: t.leaderId,
@@ -549,6 +570,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           status: "sin_iniciar",
           due_date: data.dueDate ?? new Date().toISOString().slice(0, 10),
           max_collaborators: max,
+          reference_image: data.referenceImage ?? null,
           requires_leader: data.requiresLeader ?? false,
           leader_id: data.leaderId ?? null,
           slots: Array.from({ length: max }, () => ({ userId: null, claimedAt: null })),
@@ -575,6 +597,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (patch.status !== undefined) dbPatch.status = patch.status;
     if (patch.dueDate !== undefined) dbPatch.due_date = patch.dueDate;
     if (patch.maxCollaborators !== undefined) dbPatch.max_collaborators = patch.maxCollaborators;
+    if (patch.referenceImage !== undefined) dbPatch.reference_image = patch.referenceImage || null;
     if (patch.requiresLeader !== undefined) dbPatch.requires_leader = patch.requiresLeader;
     if (patch.leaderId !== undefined) dbPatch.leader_id = patch.leaderId;
     if (patch.slots !== undefined) dbPatch.slots = patch.slots;
@@ -622,20 +645,86 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (error) return error.message;
   }, []);
 
-  const addChatMessage: AppContextValue["addChatMessage"] = useCallback(async (taskId, text) => {
-    if (!supabase) return "Supabase no está configurado";
-    const { error } = await supabase.rpc("add_chat_message", { p_task_id: taskId, p_text: text });
-    if (error) return error.message;
-  }, []);
+  const addChatMessage: AppContextValue["addChatMessage"] = useCallback(
+    async (taskId, text, adjuntos = []) => {
+      if (!supabase) return "Supabase no está configurado";
+      const subidos: {
+        id: string; type: "image" | "file"; name: string; url: string; uploadedBy: string; uploadedAt: string;
+      }[] = [];
+      for (const f of adjuntos) {
+        const r = await uploadFile(f, `chat/${taskId}`);
+        if (typeof r === "string") return r;
+        subidos.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          type: f.type.startsWith("image/") ? "image" : "file",
+          name: r.name,
+          url: r.url,
+          uploadedBy: stateRef.current.currentUserId,
+          uploadedAt: new Date().toISOString(),
+        });
+      }
+      const { error } = await supabase.rpc("add_chat_message", {
+        p_task_id: taskId,
+        p_text: text,
+        p_attachments: subidos,
+      });
+      if (error) return error.message;
+    },
+    [uploadFile]
+  );
 
   const toggleReaction: AppContextValue["toggleReaction"] = useCallback(async (_taskId, messageId, emoji) => {
     if (!supabase) return;
     await supabase.rpc("toggle_reaction", { p_message_id: messageId, p_emoji: emoji });
   }, []);
 
-  const addEvidence: AppContextValue["addEvidence"] = useCallback(async (taskId, name, type) => {
-    if (!supabase) return;
-    await supabase.rpc("add_evidence", { p_task_id: taskId, p_name: name, p_type: type });
+  /**
+   * Sube un archivo al almacenamiento del colegio y devuelve su enlace.
+   * Si algo falla devuelve un texto con el motivo, para mostrarlo en pantalla.
+   */
+  const uploadFile: AppContextValue["uploadFile"] = useCallback(async (file, carpeta) => {
+    if (!supabase) return "Supabase no está configurado";
+    const LIMITE = 25 * 1024 * 1024;
+    if (file.size > LIMITE) return "El archivo supera el límite de 25 MB.";
+    const limpio = file.name.replace(/[^\w.\-]+/g, "_").slice(-80);
+    const ruta = `${carpeta}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${limpio}`;
+    const { error } = await supabase.storage.from("staffboard").upload(ruta, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || undefined,
+    });
+    if (error) {
+      return error.message.toLowerCase().includes("bucket")
+        ? "Falta crear el almacenamiento en Supabase (ejecuta storage-archivos.sql)."
+        : error.message;
+    }
+    const { data } = supabase.storage.from("staffboard").getPublicUrl(ruta);
+    return { url: data.publicUrl, name: file.name };
+  }, []);
+
+  const esImagen = (f: File) => f.type.startsWith("image/");
+
+  /** Sube una evidencia real (foto o documento) a la tarea. */
+  const addEvidence: AppContextValue["addEvidence"] = useCallback(
+    async (taskId, file) => {
+      if (!supabase) return "Supabase no está configurado";
+      const subido = await uploadFile(file, `tareas/${taskId}`);
+      if (typeof subido === "string") return subido;
+      const { error } = await supabase.rpc("add_evidence", {
+        p_task_id: taskId,
+        p_name: subido.name,
+        p_type: esImagen(file) ? "image" : "file",
+        p_url: subido.url,
+      });
+      if (error) return error.message;
+    },
+    [uploadFile]
+  );
+
+  const removeEvidence: AppContextValue["removeEvidence"] = useCallback(async (taskId, itemId) => {
+    if (!supabase) return "Supabase no está configurado";
+    const { error } = await supabase.rpc("remove_evidence", { p_task_id: taskId, p_item_id: itemId });
+    if (error) return error.message;
   }, []);
 
   const addCalendarEntry: AppContextValue["addCalendarEntry"] = useCallback(
@@ -650,11 +739,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         motto: entry.motto ?? null,
       });
       logHistory("agregó al calendario institucional", entry.title, "Calendario");
+      // La especificación pide avisar a todo el personal de cualquier cambio del calendario.
+      await notify(
+        "Calendario institucional actualizado",
+        `${currentUser?.name ?? "Alguien"} agregó "${entry.title}" el ${entry.date}`,
+        "all"
+      );
       // Recargar calendario (no está en el canal de tiempo real por simplicidad)
       const { data } = await supabase.from("calendar_entries").select("*").order("date", { ascending: true });
       if (data) setState((prev) => ({ ...prev, calendar: data.map(mapCalendar) }));
     },
-    [logHistory]
+    [logHistory, notify, currentUser]
   );
 
   const removeCalendarEntry: AppContextValue["removeCalendarEntry"] = useCallback(
@@ -663,9 +758,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const entry = state.calendar.find((c) => c.id === id);
       await supabase.from("calendar_entries").delete().eq("id", id);
       setState((prev) => ({ ...prev, calendar: prev.calendar.filter((c) => c.id !== id) }));
-      if (entry) logHistory("eliminó del calendario institucional", entry.title, "Calendario");
+      if (entry) {
+        logHistory("eliminó del calendario institucional", entry.title, "Calendario");
+        await notify(
+          "Calendario institucional actualizado",
+          `${currentUser?.name ?? "Alguien"} eliminó "${entry.title}" del ${entry.date}`,
+          "all"
+        );
+      }
     },
-    [state.calendar, logHistory]
+    [state.calendar, logHistory, notify, currentUser]
   );
 
   const updateSettings: AppContextValue["updateSettings"] = useCallback(
@@ -673,6 +775,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!supabase) return;
       const dbPatch: Record<string, unknown> = {};
       if (patch.name !== undefined) dbPatch.name = patch.name;
+      if (patch.officialCalendarUrl !== undefined) dbPatch.official_calendar_url = patch.officialCalendarUrl || null;
+      if (patch.officialCalendarName !== undefined) dbPatch.official_calendar_name = patch.officialCalendarName || null;
       if (patch.domain !== undefined) dbPatch.domain = patch.domain;
       if (patch.schoolYear !== undefined) dbPatch.school_year = patch.schoolYear;
       if (patch.timezone !== undefined) dbPatch.timezone = patch.timezone;
@@ -889,7 +993,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setExecStatus,
     addChatMessage,
     toggleReaction,
+    uploadFile,
     addEvidence,
+    removeEvidence,
     addCalendarEntry,
     removeCalendarEntry,
     updateSettings,
