@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
 import { Modal } from "@/components/ui/modal";
-import { cx } from "@/lib/utils";
+import { correoPermitido, cx, textoDominios } from "@/lib/utils";
 import { Role } from "@/lib/types";
 
 export default function EquipoPage() {
@@ -205,8 +205,8 @@ function AddMemberModal({
             setError("Escribe un correo válido.");
             return;
           }
-          if (!email.toLowerCase().endsWith("@" + domain.toLowerCase())) {
-            setError(`El correo debe terminar en @${domain}.`);
+          if (!correoPermitido(email, domain)) {
+            setError(`El correo debe pertenecer a ${textoDominios(domain)}.`);
             return;
           }
           if (existing.includes(email.toLowerCase())) {
@@ -236,8 +236,8 @@ function AddMemberModal({
         </div>
         <div>
           <label className="label">Correo institucional</label>
-          <input name="email" type="email" className="input" placeholder={`nombre@${domain}`} required />
-          <p className="mt-1 text-xs text-ink-400">Debe pertenecer al dominio {domain}.</p>
+          <input name="email" type="email" className="input" placeholder={`nombre@${(domain || "correo.com").split(/[,;\s]+/)[0].replace(/^@/, "")}`} required />
+          <p className="mt-1 text-xs text-ink-400">Se acepta {textoDominios(domain)}.</p>
           {error && <p className="mt-1 text-xs font-medium text-rose-600">{error}</p>}
         </div>
         <div className="grid grid-cols-2 gap-4">

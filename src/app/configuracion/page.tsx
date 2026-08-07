@@ -5,7 +5,7 @@ import { Settings, ShieldCheck, Bell, Archive, Building2, Check } from "lucide-r
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { useApp } from "@/lib/store";
-import { cx } from "@/lib/utils";
+import { cx, textoDominios } from "@/lib/utils";
 
 const tabs = [
   { key: "general", label: "General", icon: Building2 },
@@ -80,9 +80,19 @@ export default function ConfiguracionPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="label">Dominio institucional</label>
-                      <input className="input" value={draft.domain} onChange={(e) => setDraft({ ...draft, domain: e.target.value })} />
-                      <p className="mt-1 text-xs text-ink-400">Dominio permitido para las cuentas del personal.</p>
+                      <label className="label">Dominios institucionales</label>
+                      <input
+                        className="input"
+                        placeholder="colegio.edu.do, docentes.colegio.edu.do"
+                        value={draft.domain}
+                        onChange={(e) => setDraft({ ...draft, domain: e.target.value })}
+                      />
+                      <p className="mt-1 text-xs text-ink-400">
+                        Puedes poner varios separados por comas. Si lo dejas vacío, se acepta cualquier correo.
+                      </p>
+                      <p className="mt-1 text-xs font-medium text-ink-500">
+                        Ahora mismo se acepta: {textoDominios(draft.domain)}
+                      </p>
                     </div>
                     <div>
                       <label className="label">Año escolar</label>

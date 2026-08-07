@@ -58,3 +58,32 @@ export function initialsOf(name: string) {
     .join("")
     .toUpperCase();
 }
+
+/* ============================================================
+   DOMINIOS INSTITUCIONALES
+   El colegio puede tener más de uno (por ejemplo, uno para
+   docentes y otro para administración). Se escriben separados
+   por comas en Configuración. Si el campo queda vacío, se
+   acepta cualquier correo.
+   ============================================================ */
+export function dominiosPermitidos(domain: string | undefined | null): string[] {
+  return (domain ?? "")
+    .split(/[,;\s]+/)
+    .map((d) => d.trim().replace(/^@/, "").toLowerCase())
+    .filter(Boolean);
+}
+
+export function correoPermitido(email: string, domain: string | undefined | null): boolean {
+  const lista = dominiosPermitidos(domain);
+  if (lista.length === 0) return true; // sin restricción configurada
+  const limpio = email.trim().toLowerCase();
+  return lista.some((d) => limpio.endsWith("@" + d));
+}
+
+/** Texto legible para mostrarle al usuario qué dominios se aceptan. */
+export function textoDominios(domain: string | undefined | null): string {
+  const lista = dominiosPermitidos(domain);
+  if (lista.length === 0) return "cualquier correo";
+  if (lista.length === 1) return "@" + lista[0];
+  return lista.map((d) => "@" + d).slice(0, -1).join(", ") + " o @" + lista[lista.length - 1];
+}

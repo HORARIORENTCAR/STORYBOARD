@@ -33,9 +33,20 @@ export async function POST(req: NextRequest) {
 
     // 2. Verificar dominio institucional.
     const { data: settings } = await admin.from("institution_settings").select("domain").single();
-    const domain = settings?.domain ?? "";
-    if (domain && !email.toLowerCase().endsWith("@" + domain.toLowerCase())) {
-      return NextResponse.json({ error: `El correo debe pertenecer al dominio @${domain}` }, { status: 400 });
+    // El colegio puede tener varios dominios, separados por comas.
+    const dominios = String(settings?.domain ?? "")
+      .split(/[,;\s]+/)
+      .map((d) => d.trim().replace(/^@/, "").toLowerCase())
+      .filter(Boolean);
+    if (dominios.length > 0) {
+      const limpio = String(email).trim().toLowerCase();
+      const permitido = dominios.some((d) => limpio.endsWith("@" + d));
+      if (!permitido) {
+        return NextResponse.json(
+          { error: `El correo debe pertenecer a: ${dominios.map((d) => "@" + d).join(", ")}` },
+          { status: 400 }
+        );
+      }
     }
 
     // 3. Crear el usuario en Supabase Auth y enviarle el correo de invitación.
