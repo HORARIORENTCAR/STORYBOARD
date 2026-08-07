@@ -1,0 +1,76 @@
+"use client";
+
+import Link from "next/link";
+import { MoreHorizontal, Users, ListChecks } from "lucide-react";
+import { SchoolEvent } from "@/lib/types";
+import { useApp } from "@/lib/store";
+import { colorTokens, formatDay, formatMonthShort } from "@/lib/utils";
+import { eventProgress } from "@/lib/task-helpers";
+import { EventStatusPill } from "@/components/ui/pills";
+import { Avatar } from "@/components/ui/avatar";
+import { ProgressBar } from "@/components/ui/progress";
+
+export function EventCard({ event }: { event: SchoolEvent }) {
+  const { tasksForEvent, userById } = useApp();
+  const tasks = tasksForEvent(event.id);
+  const progress = eventProgress(tasks);
+  const tokens = colorTokens[event.color];
+  const creator = userById(event.createdBy);
+  const collaboratorCount = new Set(
+    tasks.flatMap((t) => t.slots.filter((s) => s.userId).map((s) => s.userId))
+  ).size;
+
+  return (
+    <Link
+      href={`/eventos/${event.id}`}
+      className="card group flex flex-col overflow-hidden transition-all hover:-translate-y-0.5 hover:shadow-pop"
+    >
+      <div className={`relative flex h-28 items-center justify-center ${tokens.soft}`}>
+        <span className="text-4xl">{event.coverEmoji}</span>
+        <span className="absolute left-3 top-3">
+          <EventStatusPill status={event.status} />
+        </span>
+        <span className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg bg-white/70 text-ink-500 opacity-0 transition-opacity group-hover:opacity-100">
+          <MoreHorizontal className="h-4 w-4" />
+        </span>
+      </div>
+      <div className="flex flex-1 flex-col p-4">
+        <div className="mb-3 flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl border border-ink-100 bg-white text-center leading-none">
+            <span className="text-[15px] font-bold text-ink-900">{formatDay(event.eventDate)}</span>
+            <span className="text-[9px] font-semibold uppercase text-ink-400">{formatMonthShort(event.eventDate)}</span>
+          </div>
+          <div className="min-w-0">
+            <h3 className="truncate text-[15px] font-semibold text-ink-900">{event.name}</h3>
+            <p className="line-clamp-2 text-[13px] text-ink-500">{event.description}</p>
+          </div>
+        </div>
+
+        {creator && (
+          <div className="mb-3 flex items-center gap-2">
+            <Avatar name={creator.name} color={creator.color} size="xs" />
+            <p className="text-xs text-ink-500">
+              Creado por <span className="font-medium text-ink-700">{creator.name}</span>
+            </p>
+          </div>
+        )}
+
+        <div className="mt-auto">
+          <div className="mb-1.5 flex items-center justify-between text-xs text-ink-500">
+            <span>Progreso general</span>
+            <span className="font-semibold text-ink-800">{progress}%</span>
+          </div>
+          <ProgressBar value={progress} colorClass={tokens.solid} />
+          <div className="mt-3 flex items-center justify-between border-t border-ink-100 pt-3 text-xs text-ink-500">
+            <span className="flex items-center gap-1.5">
+              <ListChecks className="h-3.5 w-3.5" /> {tasks.length} tareas
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Users className="h-3.5 w-3.5" /> {collaboratorCount}
+            </span>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}

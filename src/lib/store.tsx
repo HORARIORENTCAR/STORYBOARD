@@ -1,0 +1,794 @@
+"use client";
+
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
+import { supabase, isSupabaseConfigured } from "./supabase";
+import {
+  AppNotification,
+  CalendarEntry,
+  ChatMessage,
+  EventTask,
+  HistoryEntry,
+  SchoolEvent,
+  StaffUser,
+  TaskExecStatus,
+} from "./types";
+import { dueLabel, isDueSoon, shouldArchive } from "./task-helpers";
+
+interface InstitutionSettings {
+  name: string;
+  domain: string;
+  schoolYear: string;
+  timezone: string;
+  cancelWindowMinutes: number;
+  archiveAfterDays: number;
+  requireEvidence: boolean;
+  notifyDeadline: boolean;
+}
+
+const defaultSettings: InstitutionSettings = {
+  name: "CARACOLI GLOBAL SCHOOL",
+  domain: "colegio.edu.do",
+  schoolYear: "2026-2027",
+  timezone: "Santo Domingo (UTC-4)",
+  cancelWindowMinutes: 1,
+  archiveAfterDays: 30,
+  requireEvidence: true,
+  notifyDeadline: true,
+};
+
+interface StoredState {
+  users: StaffUser[];
+  events: SchoolEvent[];
+  tasks: EventTask[];
+  calendar: CalendarEntry[];
+  history: HistoryEntry[];
+  notifications: AppNotification[];
+  settings: InstitutionSettings;
+  currentUserId: string;
+  loggedIn: boolean;
+  loading: boolean;
+  /** Mensaje visible si faltan las variables de entorno de Supabase. */
+  configError: string | null;
+}
+
+const emptyState: StoredState = {
+  users: [],
+  events: [],
+  tasks: [],
+  calendar: [],
+  history: [],
+  notifications: [],
+  settings: defaultSettings,
+  currentUserId: "",
+  loggedIn: false,
+  loading: true,
+  configError: isSupabaseConfigured
+    ? null
+    : "Falta conectar Supabase: define NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en .env.local (ver supabase/README).",
+};
+
+/* ============================================================
+   MAPEO fila de la base de datos (snake_case) -> tipos de la app
+   ============================================================ */
+function mapProfile(r: any): StaffUser {
+  return {
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    role: r.role,
+    title: r.title ?? undefined,
+    area: r.area ?? undefined,
+    status: r.status,
+    initials: r.initials,
+    color: r.color,
+    joinedAt: r.joined_at,
+  };
+}
+function mapEvent(r: any, taskIds: string[]): SchoolEvent {
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    coverEmoji: r.cover_emoji,
+    color: r.color,
+    createdAt: r.created_date,
+    eventDate: r.event_date,
+    dueDate: r.due_date ?? undefined,
+    status: r.status,
+    createdBy: r.created_by,
+    taskIds,
+  };
+}
+function mapChat(r: any): ChatMessage {
+  return { id: r.id, authorId: r.author_id, text: r.text, createdAt: r.created_at, reactions: r.reactions ?? {} };
+}
+function mapTask(r: any, chat: ChatMessage[]): EventTask {
+  return {
+    id: r.id,
+    eventId: r.event_id,
+    name: r.name,
+    description: r.description,
+    color: r.color,
+    priority: r.priority,
+    status: r.status,
+    dueDate: r.due_date,
+    maxCollaborators: r.max_collaborators,
+    slots: r.slots ?? [],
+    requiresLeader: r.requires_leader,
+    leaderId: r.leader_id,
+    chat,
+    evidence: r.evidence ?? [],
+    attachments: r.attachments ?? [],
+    waitlist: r.waitlist ?? [],
+    archived: r.archived,
+    deadlineNotified: r.deadline_notified,
+  };
+}
+function mapNotification(r: any, readIds: Set<string>): AppNotification {
+  return {
+    id: r.id,
+    title: r.title,
+    detail: r.detail,
+    createdAt: r.created_at,
+    read: readIds.has(r.id),
+    audience: r.audience_all ? "all" : (r.audience_users ?? []),
+  };
+}
+function mapCalendar(r: any): CalendarEntry {
+  return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined };
+}
+function mapHistory(r: any): HistoryEntry {
+  return { id: r.id, userId: r.user_id, action: r.action, detail: r.detail, type: r.type, createdAt: r.created_at };
+}
+function mapSettings(r: any): InstitutionSettings {
+  return {
+    name: r.name,
+    domain: r.domain,
+    schoolYear: r.school_year,
+    timezone: r.timezone,
+    cancelWindowMinutes: r.cancel_window_minutes,
+    archiveAfterDays: r.archive_after_days,
+    requireEvidence: r.require_evidence,
+    notifyDeadline: r.notify_deadline,
+  };
+}
+
+interface AppContextValue extends StoredState {
+  currentUser: StaffUser;
+  isAdmin: boolean;
+  eventById: (id: string) => SchoolEvent | undefined;
+  tasksForEvent: (eventId: string) => EventTask[];
+  userById: (id: string) => StaffUser | undefined;
+  canSeeEvent: (event: SchoolEvent) => boolean;
+  visibleEvents: SchoolEvent[];
+  wallEvents: SchoolEvent[];
+  myEvents: SchoolEvent[];
+  canEditEvent: (event: SchoolEvent) => boolean;
+  canDeleteTask: (task: EventTask) => boolean;
+  createEvent: (data: Partial<SchoolEvent> & { name: string }) => Promise<SchoolEvent | null>;
+  updateEvent: (id: string, patch: Partial<SchoolEvent>) => Promise<void>;
+  deleteEvent: (id: string) => Promise<void>;
+  duplicateEvent: (id: string) => Promise<void>;
+  createTask: (data: Partial<EventTask> & { eventId: string; name: string }) => Promise<EventTask | null>;
+  updateTask: (id: string, patch: Partial<EventTask>) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
+  claimSlot: (taskId: string, slotIndex: number) => Promise<string | void>;
+  cancelSlot: (taskId: string) => Promise<string | void>;
+  joinWaitlist: (taskId: string) => Promise<string | void>;
+  leaveWaitlist: (taskId: string) => Promise<string | void>;
+  hasEvidence: (task: EventTask) => boolean;
+  canFinishTask: (task: EventTask) => boolean;
+  myNotifications: AppNotification[];
+  liveTasks: EventTask[];
+  runArchiveSweep: () => Promise<number>;
+  runDeadlineAlerts: () => Promise<number>;
+  notify: (title: string, detail: string, audience?: "all" | string[]) => Promise<void>;
+  setExecStatus: (taskId: string, status: TaskExecStatus) => Promise<string | void>;
+  addChatMessage: (taskId: string, text: string) => Promise<string | void>;
+  toggleReaction: (taskId: string, messageId: string, emoji: "👍" | "❤️" | "✅") => Promise<void>;
+  addEvidence: (taskId: string, name: string, type: "image" | "file") => Promise<void>;
+  addCalendarEntry: (entry: Omit<CalendarEntry, "id">) => Promise<void>;
+  removeCalendarEntry: (id: string) => Promise<void>;
+  updateSettings: (patch: Partial<InstitutionSettings>) => Promise<void>;
+  addUser: (data: { name: string; email: string; role: "admin" | "member"; title?: string; area?: string }) => Promise<string | void>;
+  updateUserRole: (id: string, role: "admin" | "member") => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
+  login: (email: string, password: string) => Promise<string | void>;
+  logout: () => Promise<void>;
+  logHistory: (action: string, detail: string, type: HistoryEntry["type"]) => void;
+}
+
+const AppContext = createContext<AppContextValue | null>(null);
+
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<StoredState>(emptyState);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  /** Carga todo lo visible para la sesión actual (RLS decide qué llega). */
+  const loadAll = useCallback(async (userId: string) => {
+    if (!supabase) return;
+    const [profilesR, eventsR, tasksR, chatR, notifR, readsR, calR, histR, settingsR] = await Promise.all([
+      supabase.from("profiles").select("*"),
+      supabase.from("events").select("*").order("created_at", { ascending: false }),
+      supabase.from("event_tasks").select("*"),
+      supabase.from("task_chat_messages").select("*").order("created_at", { ascending: true }),
+      supabase.from("notifications").select("*").order("created_at", { ascending: false }),
+      supabase.from("notification_reads").select("notification_id").eq("user_id", userId),
+      supabase.from("calendar_entries").select("*").order("date", { ascending: true }),
+      supabase.from("history_log").select("*").order("created_at", { ascending: false }).limit(500),
+      supabase.from("institution_settings").select("*").single(),
+    ]);
+
+    const chatByTask = new Map<string, ChatMessage[]>();
+    (chatR.data ?? []).forEach((r) => {
+      const list = chatByTask.get(r.task_id) ?? [];
+      list.push(mapChat(r));
+      chatByTask.set(r.task_id, list);
+    });
+    const tasks = (tasksR.data ?? []).map((r) => mapTask(r, chatByTask.get(r.id) ?? []));
+    const taskIdsByEvent = new Map<string, string[]>();
+    tasks.forEach((t) => {
+      const list = taskIdsByEvent.get(t.eventId) ?? [];
+      list.push(t.id);
+      taskIdsByEvent.set(t.eventId, list);
+    });
+    const events = (eventsR.data ?? []).map((r) => mapEvent(r, taskIdsByEvent.get(r.id) ?? []));
+    const readIds = new Set((readsR.data ?? []).map((r) => r.notification_id));
+
+    setState((prev) => ({
+      ...prev,
+      users: (profilesR.data ?? []).map(mapProfile),
+      events,
+      tasks,
+      calendar: (calR.data ?? []).map(mapCalendar),
+      history: (histR.data ?? []).map(mapHistory),
+      notifications: (notifR.data ?? []).map((r) => mapNotification(r, readIds)),
+      settings: settingsR.data ? mapSettings(settingsR.data) : defaultSettings,
+      currentUserId: userId,
+      loggedIn: true,
+      loading: false,
+    }));
+  }, []);
+
+  /* --------------------------------------------------------
+     Sesión: revisa si ya hay una, y escucha cambios (login/logout,
+     además del enlace mágico que llega por correo de invitación).
+     -------------------------------------------------------- */
+  useEffect(() => {
+    if (!supabase) {
+      setState((prev) => ({ ...prev, loading: false }));
+      return;
+    }
+    let unsub = () => {};
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.user) {
+        loadAll(data.session.user.id);
+      } else {
+        setState((prev) => ({ ...prev, loading: false }));
+      }
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session?.user) {
+        loadAll(session.user.id);
+      } else if (event === "SIGNED_OUT") {
+        setState((prev) => ({ ...emptyState, loading: false }));
+      }
+    });
+    unsub = () => sub.subscription.unsubscribe();
+    return unsub;
+  }, [loadAll]);
+
+  /* --------------------------------------------------------
+     Tiempo real: cuando cualquier persona conectada cambia algo,
+     todos los navegadores conectados se actualizan solos.
+     -------------------------------------------------------- */
+  useEffect(() => {
+    if (!supabase || !state.loggedIn) return;
+
+    const upsert = <T extends { id: string }>(list: T[], row: T, deleted: boolean) => {
+      if (deleted) return list.filter((x) => x.id !== row.id);
+      const idx = list.findIndex((x) => x.id === row.id);
+      if (idx === -1) return [row, ...list];
+      const next = [...list];
+      next[idx] = row;
+      return next;
+    };
+
+    const channel = supabase
+      .channel("staff-board-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, (payload: RealtimePostgresChangesPayload<any>) => {
+        setState((prev) => {
+          const deleted = payload.eventType === "DELETE";
+          const row = deleted ? payload.old : payload.new;
+          const taskIds = prev.tasks.filter((t) => t.eventId === row.id).map((t) => t.id);
+          return { ...prev, events: upsert(prev.events, mapEvent(row, taskIds), deleted) };
+        });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_tasks" }, (payload: RealtimePostgresChangesPayload<any>) => {
+        setState((prev) => {
+          const deleted = payload.eventType === "DELETE";
+          const row = deleted ? payload.old : payload.new;
+          const existingChat = prev.tasks.find((t) => t.id === row.id)?.chat ?? [];
+          const nextTasks = upsert(prev.tasks, mapTask(row, existingChat), deleted);
+          const taskIds = nextTasks.filter((t) => t.eventId === row.event_id).map((t) => t.id);
+          return {
+            ...prev,
+            tasks: nextTasks,
+            events: prev.events.map((e) => (e.id === row.event_id ? { ...e, taskIds } : e)),
+          };
+        });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "task_chat_messages" }, (payload: RealtimePostgresChangesPayload<any>) => {
+        setState((prev) => {
+          const deleted = payload.eventType === "DELETE";
+          const row = deleted ? payload.old : payload.new;
+          return {
+            ...prev,
+            tasks: prev.tasks.map((t) => {
+              if (t.id !== row.task_id) return t;
+              const chat = upsert(t.chat, mapChat(row), deleted);
+              return { ...t, chat };
+            }),
+          };
+        });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, (payload: RealtimePostgresChangesPayload<any>) => {
+        setState((prev) => {
+          const deleted = payload.eventType === "DELETE";
+          const row = deleted ? payload.old : payload.new;
+          const alreadyRead = prev.notifications.find((n) => n.id === row.id)?.read ?? false;
+          return { ...prev, notifications: upsert(prev.notifications, mapNotification(row, alreadyRead ? new Set([row.id]) : new Set()), deleted) };
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [state.loggedIn]);
+
+  const currentUser = useMemo(
+    () => state.users.find((u) => u.id === state.currentUserId) ?? ({ id: "", name: "", email: "", role: "member", status: "active", initials: "", color: "#146942", joinedAt: "" } as StaffUser),
+    [state.users, state.currentUserId]
+  );
+  const isAdmin = currentUser?.role === "admin";
+
+  const logHistory = useCallback<AppContextValue["logHistory"]>((action, detail, type) => {
+    if (!supabase) return;
+    supabase.from("history_log").insert({ user_id: stateRef.current.currentUserId, action, detail, type }).then();
+  }, []);
+
+  const taskAudience = useCallback(
+    (task: EventTask, includeWaitlist = false) => {
+      const event = stateRef.current.events.find((e) => e.id === task.eventId);
+      return [
+        ...task.slots.map((s) => s.userId),
+        task.leaderId,
+        event?.createdBy,
+        ...(includeWaitlist ? task.waitlist : []),
+      ].filter((x): x is string => !!x);
+    },
+    []
+  );
+
+  const notify: AppContextValue["notify"] = useCallback(async (title, detail, audience = "all") => {
+    if (!supabase) return;
+    const dest = audience === "all" ? [] : Array.from(new Set(audience)).filter((id) => id && id !== stateRef.current.currentUserId);
+    if (audience !== "all" && dest.length === 0) return;
+    await supabase.rpc("notify", { p_title: title, p_detail: detail, p_audience_all: audience === "all", p_audience_users: dest });
+  }, []);
+
+  const liveTasks = useMemo(() => state.tasks.filter((t) => !t.archived), [state.tasks]);
+
+  const runArchiveSweep: AppContextValue["runArchiveSweep"] = useCallback(async () => {
+    if (!supabase) return 0;
+    const target = state.tasks.filter((t) => shouldArchive(t, state.settings.archiveAfterDays));
+    if (target.length === 0) return 0;
+    await supabase.from("event_tasks").update({ archived: true }).in("id", target.map((t) => t.id));
+    logHistory("archivó automáticamente", `${target.length} tarea(s) vencida(s)`, "Configuración");
+    return target.length;
+  }, [state.tasks, state.settings.archiveAfterDays, logHistory]);
+
+  const runDeadlineAlerts: AppContextValue["runDeadlineAlerts"] = useCallback(async () => {
+    if (!supabase || !state.settings.notifyDeadline) return 0;
+    const target = state.tasks.filter((t) => !t.archived && isDueSoon(t) && !t.deadlineNotified);
+    if (target.length === 0) return 0;
+    await supabase.from("event_tasks").update({ deadline_notified: true }).in("id", target.map((t) => t.id));
+    for (const t of target) {
+      await notify("Fecha límite próxima", `${t.name} — ${dueLabel(t).toLowerCase()}`, taskAudience(t, true));
+    }
+    return target.length;
+  }, [state.tasks, state.settings.notifyDeadline, notify, taskAudience]);
+
+  const eventById = useCallback((id: string) => state.events.find((e) => e.id === id), [state.events]);
+  const tasksForEvent = useCallback((eventId: string) => state.tasks.filter((t) => t.eventId === eventId), [state.tasks]);
+  const userById = useCallback((id: string) => state.users.find((u) => u.id === id), [state.users]);
+
+  const canSeeEvent = useCallback(
+    (event: SchoolEvent) => event.status === "publicado" || event.createdBy === currentUser?.id || isAdmin,
+    [isAdmin, currentUser]
+  );
+  const visibleEvents = useMemo(
+    () => state.events.filter((e) => e.status === "publicado" || e.createdBy === currentUser?.id || isAdmin),
+    [state.events, currentUser, isAdmin]
+  );
+  const wallEvents = useMemo(() => state.events.filter((e) => e.status === "publicado"), [state.events]);
+  const myEvents = useMemo(() => state.events.filter((e) => e.createdBy === currentUser?.id), [state.events, currentUser]);
+
+  const canEditEvent = useCallback((event: SchoolEvent) => isAdmin || event.createdBy === currentUser?.id, [isAdmin, currentUser]);
+  const canDeleteTask = useCallback(
+    (task: EventTask) => {
+      const event = eventById(task.eventId);
+      return isAdmin || (event ? event.createdBy === currentUser?.id : false);
+    },
+    [isAdmin, currentUser, eventById]
+  );
+
+  const createEvent: AppContextValue["createEvent"] = useCallback(
+    async (data) => {
+      if (!supabase || !currentUser?.id) return null;
+      const { data: row, error } = await supabase
+        .from("events")
+        .insert({
+          name: data.name,
+          description: data.description ?? "",
+          cover_emoji: data.coverEmoji ?? "📌",
+          color: data.color ?? "brand",
+          event_date: data.eventDate ?? new Date().toISOString().slice(0, 10),
+          due_date: data.dueDate ?? null,
+          status: data.status ?? "borrador",
+          created_by: currentUser.id,
+        })
+        .select()
+        .single();
+      if (error || !row) return null;
+      logHistory("creó el evento", row.name, "Evento");
+      return mapEvent(row, []);
+    },
+    [currentUser, logHistory]
+  );
+
+  const updateEvent: AppContextValue["updateEvent"] = useCallback(
+    async (id, patch) => {
+      if (!supabase) return;
+      const prevEvent = state.events.find((e) => e.id === id);
+      const dbPatch: Record<string, unknown> = {};
+      if (patch.name !== undefined) dbPatch.name = patch.name;
+      if (patch.description !== undefined) dbPatch.description = patch.description;
+      if (patch.coverEmoji !== undefined) dbPatch.cover_emoji = patch.coverEmoji;
+      if (patch.color !== undefined) dbPatch.color = patch.color;
+      if (patch.eventDate !== undefined) dbPatch.event_date = patch.eventDate;
+      if (patch.dueDate !== undefined) dbPatch.due_date = patch.dueDate;
+      if (patch.status !== undefined) dbPatch.status = patch.status;
+      await supabase.from("events").update(dbPatch).eq("id", id);
+      if (patch.status && patch.status !== prevEvent?.status) {
+        logHistory(patch.status === "publicado" ? "publicó el evento" : "cambió el estado de", prevEvent?.name ?? "", "Evento");
+        if (patch.status === "publicado") await notify("Nuevo evento publicado", `${currentUser?.name ?? "Alguien"} publicó ${prevEvent?.name ?? ""}`, "all");
+      } else {
+        logHistory("editó el evento", prevEvent?.name ?? "", "Evento");
+      }
+    },
+    [state.events, logHistory, notify, currentUser]
+  );
+
+  const deleteEvent: AppContextValue["deleteEvent"] = useCallback(
+    async (id) => {
+      if (!supabase) return;
+      const event = state.events.find((e) => e.id === id);
+      await supabase.from("events").delete().eq("id", id);
+      if (event) logHistory("eliminó el evento", event.name, "Evento");
+    },
+    [state.events, logHistory]
+  );
+
+  const duplicateEvent: AppContextValue["duplicateEvent"] = useCallback(
+    async (id) => {
+      if (!supabase || !currentUser?.id) return;
+      const event = state.events.find((e) => e.id === id);
+      if (!event) return;
+      const relatedTasks = state.tasks.filter((t) => t.eventId === id);
+      const { data: newEventRow, error } = await supabase
+        .from("events")
+        .insert({
+          name: `${event.name} · nueva edición`,
+          description: event.description,
+          cover_emoji: event.coverEmoji,
+          color: event.color,
+          event_date: event.eventDate,
+          due_date: event.dueDate ?? null,
+          status: "borrador",
+          created_by: currentUser.id,
+        })
+        .select()
+        .single();
+      if (error || !newEventRow) return;
+      if (relatedTasks.length > 0) {
+        await supabase.from("event_tasks").insert(
+          relatedTasks.map((t) => ({
+            event_id: newEventRow.id,
+            name: t.name,
+            description: t.description,
+            color: t.color,
+            priority: t.priority,
+            status: "sin_iniciar",
+            due_date: t.dueDate,
+            max_collaborators: t.maxCollaborators,
+            slots: t.slots.map(() => ({ userId: null, claimedAt: null })),
+            requires_leader: t.requiresLeader,
+            leader_id: t.leaderId,
+            waitlist: [],
+            evidence: [],
+            attachments: [],
+          }))
+        );
+      }
+      logHistory("creó el evento", newEventRow.name, "Evento");
+    },
+    [state.events, state.tasks, currentUser, logHistory]
+  );
+
+  const createTask: AppContextValue["createTask"] = useCallback(
+    async (data) => {
+      if (!supabase) return null;
+      const max = data.maxCollaborators ?? 1;
+      const { data: row, error } = await supabase
+        .from("event_tasks")
+        .insert({
+          event_id: data.eventId,
+          name: data.name,
+          description: data.description ?? "",
+          color: data.color ?? "brand",
+          priority: data.priority ?? "media",
+          status: "sin_iniciar",
+          due_date: data.dueDate ?? new Date().toISOString().slice(0, 10),
+          max_collaborators: max,
+          requires_leader: data.requiresLeader ?? false,
+          leader_id: data.leaderId ?? null,
+          slots: Array.from({ length: max }, () => ({ userId: null, claimedAt: null })),
+          waitlist: [],
+          evidence: [],
+          attachments: [],
+        })
+        .select()
+        .single();
+      if (error || !row) return null;
+      logHistory("creó la tarea", row.name, "Tarea");
+      return mapTask(row, []);
+    },
+    [logHistory]
+  );
+
+  const updateTask: AppContextValue["updateTask"] = useCallback(async (id, patch) => {
+    if (!supabase) return;
+    const dbPatch: Record<string, unknown> = {};
+    if (patch.name !== undefined) dbPatch.name = patch.name;
+    if (patch.description !== undefined) dbPatch.description = patch.description;
+    if (patch.color !== undefined) dbPatch.color = patch.color;
+    if (patch.priority !== undefined) dbPatch.priority = patch.priority;
+    if (patch.status !== undefined) dbPatch.status = patch.status;
+    if (patch.dueDate !== undefined) dbPatch.due_date = patch.dueDate;
+    if (patch.maxCollaborators !== undefined) dbPatch.max_collaborators = patch.maxCollaborators;
+    if (patch.requiresLeader !== undefined) dbPatch.requires_leader = patch.requiresLeader;
+    if (patch.leaderId !== undefined) dbPatch.leader_id = patch.leaderId;
+    if (patch.slots !== undefined) dbPatch.slots = patch.slots;
+    await supabase.from("event_tasks").update(dbPatch).eq("id", id);
+  }, []);
+
+  const deleteTask: AppContextValue["deleteTask"] = useCallback(
+    async (id) => {
+      if (!supabase) return;
+      const task = state.tasks.find((t) => t.id === id);
+      await supabase.from("event_tasks").delete().eq("id", id);
+      if (task) logHistory("eliminó la tarea", task.name, "Tarea");
+    },
+    [state.tasks, logHistory]
+  );
+
+  /* ----- acciones sensibles a condiciones de carrera: pasan por RPC ----- */
+  const claimSlot: AppContextValue["claimSlot"] = useCallback(async (taskId, slotIndex) => {
+    if (!supabase) return "Supabase no está configurado";
+    const { error } = await supabase.rpc("claim_slot", { p_task_id: taskId, p_slot_index: slotIndex });
+    if (error) return error.message;
+  }, []);
+
+  const cancelSlot: AppContextValue["cancelSlot"] = useCallback(async (taskId) => {
+    if (!supabase) return "Supabase no está configurado";
+    const { error } = await supabase.rpc("cancel_slot", { p_task_id: taskId });
+    if (error) return error.message;
+  }, []);
+
+  const joinWaitlist: AppContextValue["joinWaitlist"] = useCallback(async (taskId) => {
+    if (!supabase) return "Supabase no está configurado";
+    const { error } = await supabase.rpc("join_waitlist", { p_task_id: taskId });
+    if (error) return error.message;
+  }, []);
+
+  const leaveWaitlist: AppContextValue["leaveWaitlist"] = useCallback(async (taskId) => {
+    if (!supabase) return "Supabase no está configurado";
+    const { error } = await supabase.rpc("leave_waitlist", { p_task_id: taskId });
+    if (error) return error.message;
+  }, []);
+
+  const setExecStatus: AppContextValue["setExecStatus"] = useCallback(async (taskId, status) => {
+    if (!supabase) return "Supabase no está configurado";
+    const { error } = await supabase.rpc("set_exec_status", { p_task_id: taskId, p_status: status });
+    if (error) return error.message;
+  }, []);
+
+  const addChatMessage: AppContextValue["addChatMessage"] = useCallback(async (taskId, text) => {
+    if (!supabase) return "Supabase no está configurado";
+    const { error } = await supabase.rpc("add_chat_message", { p_task_id: taskId, p_text: text });
+    if (error) return error.message;
+  }, []);
+
+  const toggleReaction: AppContextValue["toggleReaction"] = useCallback(async (_taskId, messageId, emoji) => {
+    if (!supabase) return;
+    await supabase.rpc("toggle_reaction", { p_message_id: messageId, p_emoji: emoji });
+  }, []);
+
+  const addEvidence: AppContextValue["addEvidence"] = useCallback(async (taskId, name, type) => {
+    if (!supabase) return;
+    await supabase.rpc("add_evidence", { p_task_id: taskId, p_name: name, p_type: type });
+  }, []);
+
+  const addCalendarEntry: AppContextValue["addCalendarEntry"] = useCallback(
+    async (entry) => {
+      if (!supabase) return;
+      await supabase.from("calendar_entries").insert({
+        date: entry.date,
+        title: entry.title,
+        kind: entry.kind,
+        location: entry.location ?? null,
+        time: entry.time ?? null,
+        motto: entry.motto ?? null,
+      });
+      logHistory("agregó al calendario institucional", entry.title, "Calendario");
+      // Recargar calendario (no está en el canal de tiempo real por simplicidad)
+      const { data } = await supabase.from("calendar_entries").select("*").order("date", { ascending: true });
+      if (data) setState((prev) => ({ ...prev, calendar: data.map(mapCalendar) }));
+    },
+    [logHistory]
+  );
+
+  const removeCalendarEntry: AppContextValue["removeCalendarEntry"] = useCallback(
+    async (id) => {
+      if (!supabase) return;
+      const entry = state.calendar.find((c) => c.id === id);
+      await supabase.from("calendar_entries").delete().eq("id", id);
+      setState((prev) => ({ ...prev, calendar: prev.calendar.filter((c) => c.id !== id) }));
+      if (entry) logHistory("eliminó del calendario institucional", entry.title, "Calendario");
+    },
+    [state.calendar, logHistory]
+  );
+
+  const updateSettings: AppContextValue["updateSettings"] = useCallback(
+    async (patch) => {
+      if (!supabase) return;
+      const dbPatch: Record<string, unknown> = {};
+      if (patch.name !== undefined) dbPatch.name = patch.name;
+      if (patch.domain !== undefined) dbPatch.domain = patch.domain;
+      if (patch.schoolYear !== undefined) dbPatch.school_year = patch.schoolYear;
+      if (patch.timezone !== undefined) dbPatch.timezone = patch.timezone;
+      if (patch.cancelWindowMinutes !== undefined) dbPatch.cancel_window_minutes = patch.cancelWindowMinutes;
+      if (patch.archiveAfterDays !== undefined) dbPatch.archive_after_days = patch.archiveAfterDays;
+      if (patch.requireEvidence !== undefined) dbPatch.require_evidence = patch.requireEvidence;
+      if (patch.notifyDeadline !== undefined) dbPatch.notify_deadline = patch.notifyDeadline;
+      await supabase.from("institution_settings").update(dbPatch).eq("id", true);
+      setState((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
+      logHistory("actualizó la configuración institucional", state.settings.name, "Configuración");
+    },
+    [state.settings, logHistory]
+  );
+
+  /** Invita a alguien nuevo: pasa por /api/invite (usa la llave de servicio). */
+  const addUser: AppContextValue["addUser"] = useCallback(
+    async (data) => {
+      const res = await fetch("/api/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, requesterId: stateRef.current.currentUserId }),
+      });
+      const body = await res.json();
+      if (!res.ok) return body.error ?? "No se pudo invitar a la persona.";
+      logHistory("agregó al colaborador", data.name, "Equipo");
+      if (supabase) {
+        const { data: profiles } = await supabase.from("profiles").select("*");
+        if (profiles) setState((prev) => ({ ...prev, users: profiles.map(mapProfile) }));
+      }
+    },
+    [logHistory]
+  );
+
+  const updateUserRole: AppContextValue["updateUserRole"] = useCallback(async (id, role) => {
+    if (!supabase) return;
+    await supabase.from("profiles").update({ role }).eq("id", id);
+    setState((prev) => ({ ...prev, users: prev.users.map((u) => (u.id === id ? { ...u, role } : u)) }));
+  }, []);
+
+  const myNotifications = useMemo(
+    () => state.notifications.filter((n) => n.audience === "all" || (Array.isArray(n.audience) && n.audience.includes(currentUser?.id ?? ""))),
+    [state.notifications, currentUser]
+  );
+
+  const hasEvidence: AppContextValue["hasEvidence"] = useCallback((task) => task.evidence.length + task.attachments.length > 0, []);
+  const canFinishTask: AppContextValue["canFinishTask"] = useCallback(
+    (task) => !state.settings.requireEvidence || hasEvidence(task),
+    [state.settings.requireEvidence, hasEvidence]
+  );
+
+  const markAllNotificationsRead: AppContextValue["markAllNotificationsRead"] = useCallback(async () => {
+    if (!supabase) return;
+    const unread = stateRef.current.notifications.filter((n) => !n.read);
+    await Promise.all(unread.map((n) => supabase!.rpc("mark_notification_read", { p_notification_id: n.id })));
+    setState((prev) => ({ ...prev, notifications: prev.notifications.map((n) => ({ ...n, read: true })) }));
+  }, []);
+
+  const login: AppContextValue["login"] = useCallback(async (email, password) => {
+    if (!supabase) return "Falta conectar Supabase (revisa .env.local).";
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return "Correo o contraseña incorrectos.";
+  }, []);
+
+  const logout: AppContextValue["logout"] = useCallback(async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+  }, []);
+
+  const value: AppContextValue = {
+    ...state,
+    currentUser,
+    isAdmin,
+    eventById,
+    tasksForEvent,
+    userById,
+    canSeeEvent,
+    visibleEvents,
+    wallEvents,
+    myEvents,
+    canEditEvent,
+    canDeleteTask,
+    createEvent,
+    updateEvent,
+    deleteEvent,
+    duplicateEvent,
+    createTask,
+    updateTask,
+    deleteTask,
+    claimSlot,
+    cancelSlot,
+    joinWaitlist,
+    leaveWaitlist,
+    hasEvidence,
+    canFinishTask,
+    myNotifications,
+    notify,
+    liveTasks,
+    runArchiveSweep,
+    runDeadlineAlerts,
+    setExecStatus,
+    addChatMessage,
+    toggleReaction,
+    addEvidence,
+    addCalendarEntry,
+    removeCalendarEntry,
+    updateSettings,
+    addUser,
+    updateUserRole,
+    markAllNotificationsRead,
+    login,
+    logout,
+    logHistory,
+  };
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+}
+
+export function useApp() {
+  const ctx = useContext(AppContext);
+  if (!ctx) throw new Error("useApp must be used within AppProvider");
+  return ctx;
+}
+
+export type { InstitutionSettings };
