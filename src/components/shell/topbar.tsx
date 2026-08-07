@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bell, Search, ChevronDown, UserCog, SlidersHorizontal, History, LogOut, Users2, Building2, ShieldCheck, X, ListChecks } from "lucide-react";
@@ -18,6 +18,19 @@ export function Topbar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const results = searchAll(query);
   const hasResults = results.events.length + results.tasks.length + results.people.length > 0;
+
+  // Cerrar cualquier panel abierto con la tecla Escape.
+  useEffect(() => {
+    if (!notifOpen && !menuOpen && !searchOpen) return;
+    const alSoltar = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setNotifOpen(false);
+      setMenuOpen(false);
+      setSearchOpen(false);
+    };
+    window.addEventListener("keydown", alSoltar);
+    return () => window.removeEventListener("keydown", alSoltar);
+  }, [notifOpen, menuOpen, searchOpen]);
 
   function goTo(href: string) {
     setQuery("");
@@ -128,7 +141,7 @@ export function Topbar() {
         )}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2">
         <div className="relative">
           <button
             onClick={() => {
@@ -143,6 +156,8 @@ export function Topbar() {
             )}
           </button>
           {notifOpen && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setNotifOpen(false)} aria-hidden />
             <div className="absolute right-0 z-30 mt-2 w-80 rounded-2xl border border-ink-100 bg-white p-2 shadow-pop">
               <div className="flex items-center justify-between px-2 py-1.5">
                 <p className="text-sm font-semibold text-ink-900">Notificaciones</p>
@@ -184,6 +199,7 @@ export function Topbar() {
                 ))}
               </div>
             </div>
+            </>
           )}
         </div>
 
@@ -203,6 +219,8 @@ export function Topbar() {
             <ChevronDown className="h-4 w-4 text-ink-400" />
           </button>
           {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} aria-hidden />
             <div className="absolute right-0 z-30 mt-2 w-72 rounded-2xl border border-ink-100 bg-white p-2 shadow-pop">
               <div className="flex items-center gap-3 rounded-xl bg-ink-50 px-3 py-3">
                 <Avatar name={currentUser?.name ?? ""} color={currentUser?.color} />
@@ -237,6 +255,7 @@ export function Topbar() {
                 <LogOut className="h-4 w-4" /> Cerrar sesión
               </button>
             </div>
+            </>
           )}
         </div>
       </div>
