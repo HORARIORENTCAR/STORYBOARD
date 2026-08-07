@@ -589,14 +589,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const updateTask: AppContextValue["updateTask"] = useCallback(async (id, patch) => {
     if (!supabase) return;
+    const actual = stateRef.current.tasks.find((t) => t.id === id);
     const dbPatch: Record<string, unknown> = {};
+
+    /* Si cambia la cantidad de colaboradores hay que redimensionar los lugares
+       conservando a quienes ya están inscritos. Nunca por debajo de los ocupados. */
+    if (actual && patch.maxCollaborators !== undefined && patch.maxCollaborators !== actual.maxCollaborators) {
+      const ocupados = actual.slots.filter((sl) => sl.userId);
+      const objetivo = Math.max(patch.maxCollaborators, ocupados.length, 1);
+      const nuevos = [...ocupados];
+      while (nuevos.length < objetivo) nuevos.push({ userId: null, claimedAt: null });
+      dbPatch.slots = nuevos;
+      dbPatch.max_collaborators = objetivo;
+    }
+
     if (patch.name !== undefined) dbPatch.name = patch.name;
     if (patch.description !== undefined) dbPatch.description = patch.description;
     if (patch.color !== undefined) dbPatch.color = patch.color;
     if (patch.priority !== undefined) dbPatch.priority = patch.priority;
     if (patch.status !== undefined) dbPatch.status = patch.status;
     if (patch.dueDate !== undefined) dbPatch.due_date = patch.dueDate;
-    if (patch.maxCollaborators !== undefined) dbPatch.max_collaborators = patch.maxCollaborators;
+    if (patch.maxCollaborators !== undefined && dbPatch.max_collaborators === undefined)
+      dbPatch.max_collaborators = patch.maxCollaborators;
     if (patch.referenceImage !== undefined) dbPatch.reference_image = patch.referenceImage || null;
     if (patch.requiresLeader !== undefined) dbPatch.requires_leader = patch.requiresLeader;
     if (patch.leaderId !== undefined) dbPatch.leader_id = patch.leaderId;

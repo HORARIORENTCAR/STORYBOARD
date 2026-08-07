@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
+import { TaskFormModal } from "./task-form-modal";
 import { useApp } from "@/lib/store";
 import { EventTask, TaskExecStatus } from "@/lib/types";
 import { colorTokens, formatFullDate, timeAgo } from "@/lib/utils";
@@ -9,7 +10,7 @@ import { cancelRemainingSeconds, canStillCancel, isTaskFull, slotProgress } from
 import { Avatar } from "@/components/ui/avatar";
 import { ProgressBar } from "@/components/ui/progress";
 import { ExecStatusPill, PriorityPill } from "@/components/ui/pills";
-import { Paperclip, ImagePlus, Send, Crown, UserPlus, X, FileText, Hourglass, AlertTriangle, Lock, Users, RotateCcw, CheckCircle2 } from "lucide-react";
+import { Paperclip, ImagePlus, Send, Crown, UserPlus, X, FileText, Hourglass, AlertTriangle, Lock, Users, RotateCcw, CheckCircle2, Pencil } from "lucide-react";
 import { cx } from "@/lib/utils";
 
 const statusOrder: TaskExecStatus[] = ["sin_iniciar", "en_proceso", "terminada"];
@@ -25,6 +26,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
   const [tab, setTab] = useState<"detalle" | "chat" | "evidencias">("detalle");
   const [message, setMessage] = useState("");
   const [subiendo, setSubiendo] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [aviso, setAviso] = useState("");
   const [adjuntos, setAdjuntos] = useState<File[]>([]);
   const fotoRef = useRef<HTMLInputElement>(null);
@@ -346,9 +348,13 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
           )}
 
           {canManage && (
-            <div className="flex justify-end border-t border-ink-100 pt-4">
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-ink-100 pt-4">
+              <button onClick={() => setEditOpen(true)} className="btn-secondary !py-1.5 !text-xs">
+                <Pencil className="h-3.5 w-3.5" /> Editar tarea
+              </button>
               <button
                 onClick={() => {
+                  if (!window.confirm(`¿Eliminar la tarea "${task.name}"? Se borrarán su chat y sus evidencias.`)) return;
                   deleteTask(task.id);
                   onClose();
                 }}
@@ -667,6 +673,13 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
           )}
         </div>
       )}
+
+      <TaskFormModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        eventId={task.eventId}
+        task={task}
+      />
     </Modal>
   );
 }

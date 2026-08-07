@@ -28,6 +28,7 @@ export function TaskFormModal({
 }) {
   const { createTask, updateTask, users, uploadFile } = useApp();
   const isEdit = !!task;
+  const ocupados = task?.slots.filter((sl) => sl.userId).length ?? 0;
   const [referenceImage, setReferenceImage] = useState<string>("");
   const [subiendo, setSubiendo] = useState(false);
   const [aviso, setAviso] = useState("");
@@ -70,6 +71,7 @@ export function TaskFormModal({
         requiresLeader,
         leaderId: requiresLeader ? leaderId || null : null,
         referenceImage,
+        maxCollaborators,
       });
     } else {
       createTask({ eventId, name, description, priority, dueDate, maxCollaborators, color, requiresLeader, leaderId: requiresLeader ? leaderId || null : null, referenceImage });
@@ -110,11 +112,13 @@ export function TaskFormModal({
               min={1}
               max={30}
               className="input"
+              min={Math.max(1, ocupados)}
               value={maxCollaborators}
-              disabled={isEdit}
               onChange={(e) => setMaxCollaborators(Number(e.target.value))}
             />
-            {isEdit && <p className="mt-1 text-xs text-ink-400">No se puede cambiar una vez creada la tarea.</p>}
+            {isEdit && ocupados > 0 && (
+              <p className="mt-1 text-xs text-ink-400">Hay {ocupados} persona(s) inscrita(s); no puede bajar de ahí.</p>
+            )}
           </div>
           <div>
             <label className="label">Color</label>
