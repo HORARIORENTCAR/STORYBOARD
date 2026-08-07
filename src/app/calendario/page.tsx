@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Upload, Sprout, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Download, Sprout, Trash2 } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { useApp } from "@/lib/store";
@@ -31,7 +31,7 @@ function buildMonthGrid(year: number, month: number) {
 }
 
 export default function CalendarioPage() {
-  const { calendar, addCalendarEntry, removeCalendarEntry } = useApp();
+  const { calendar, addCalendarEntry, removeCalendarEntry, isAdmin } = useApp();
   const [cursor, setCursor] = useState(new Date(2026, 7, 1));
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -65,6 +65,25 @@ export default function CalendarioPage() {
 
   const valorDelMes = calendar.find((c) => c.kind === "valor" && new Date(c.date).getMonth() === month);
 
+  /** Descarga el calendario institucional como archivo CSV (se abre en Excel). */
+  function exportarCalendario() {
+    const filas = [...calendar].sort((a, b) => a.date.localeCompare(b.date));
+    const escapar = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [
+      ["Fecha", "Título", "Tipo", "Hora", "Lugar", "Lema"].join(","),
+      ...filas.map((c) =>
+        [c.date, c.title, c.kind, c.time ?? "", c.location ?? "", c.motto ?? ""].map(escapar).join(",")
+      ),
+    ].join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `calendario-institucional-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <Shell>
       <PageHeader
@@ -72,8 +91,8 @@ export default function CalendarioPage() {
         title="Calendario institucional"
         description="Fechas, reuniones y actividades importantes en un solo lugar."
         actions={
-          <button className="btn-secondary">
-            <Upload className="h-4 w-4" /> Subir calendario oficial
+          <button onClick={exportarCalendario} className="btn-secondary">
+            <Download className="h-4 w-4" /> Exportar calendario
           </button>
         }
       />
@@ -96,15 +115,17 @@ export default function CalendarioPage() {
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
-            <button
-              onClick={() => {
-                setSelectedDate(null);
-                setCreateOpen(true);
-              }}
-              className="btn-primary"
-            >
-              <Plus className="h-4 w-4" /> Nueva fecha
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setSelectedDate(null);
+                  setCreateOpen(true);
+                }}
+                className="btn-primary"
+              >
+                <Plus className="h-4 w-4" /> Nueva fecha
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-7 gap-2 text-center text-xs font-semibold uppercase tracking-wide text-ink-400">
@@ -123,6 +144,7 @@ export default function CalendarioPage() {
                 <button
                   key={idx}
                   onClick={() => {
+                    if (!isAdmin) return;
                     setSelectedDate(`${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
                     setCreateOpen(true);
                   }}
@@ -175,12 +197,15 @@ export default function CalendarioPage() {
                       {entry.location ?? "—"} {entry.time ? `· ${entry.time}` : ""}
                     </p>
                   </div>
-                  <button
-                    onClick={() => removeCalendarEntry(entry.id)}
-                    className="opacity-0 transition-opacity group-hover:opacity-100"
-                  >
-                    <Trash2 className="h-3.5 w-3.5 text-rose-500" />
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => removeCalendarEntry(entry.id)}
+                      aria-label={`Eliminar ${entry.title}`}
+                      className="opacity-0 transition-opacity group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+                    </button>
+                  )}
                 </div>
               ))}
               {upcoming.length === 0 && <p className="text-sm text-ink-400">No hay fechas próximas.</p>}

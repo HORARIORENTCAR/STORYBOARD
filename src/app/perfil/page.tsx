@@ -8,20 +8,14 @@ import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
 
 export default function PerfilPage() {
-  const { currentUser, users, settings, logHistory } = useApp();
+  const { currentUser, settings, updateProfile } = useApp();
   const [name, setName] = useState(currentUser?.name ?? "");
   const [title, setTitle] = useState(currentUser?.title ?? "");
   const [area, setArea] = useState(currentUser?.area ?? "");
   const [saved, setSaved] = useState(false);
 
-  function save() {
-    const u = users.find((x) => x.id === currentUser?.id);
-    if (u) {
-      u.name = name.trim() || u.name;
-      u.title = title.trim();
-      u.area = area.trim();
-    }
-    logHistory("actualizó su perfil", name, "Equipo");
+  async function save() {
+    await updateProfile({ name: name.trim() || currentUser?.name, title: title.trim(), area: area.trim() });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }

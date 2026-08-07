@@ -2,16 +2,28 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Bell, Search, ChevronDown, UserCog, SlidersHorizontal, History, LogOut, Users2, Building2, ShieldCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bell, Search, ChevronDown, UserCog, SlidersHorizontal, History, LogOut, Users2, Building2, ShieldCheck, X, ListChecks } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
 import { timeAgo, cx } from "@/lib/utils";
 
 export function Topbar() {
-  const { currentUser, myNotifications, markAllNotificationsRead } = useApp();
+  const { currentUser, myNotifications, markAllNotificationsRead, logout, searchAll } = useApp();
+  const router = useRouter();
   const notifications = myNotifications; // cada quien ve solo lo suyo
   const [notifOpen, setNotifOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const results = searchAll(query);
+  const hasResults = results.events.length + results.tasks.length + results.people.length > 0;
+
+  function goTo(href: string) {
+    setQuery("");
+    setSearchOpen(false);
+    router.push(href);
+  }
   const unread = notifications.filter((n) => !n.read).length;
 
   return (
@@ -19,12 +31,101 @@ export function Topbar() {
       <div className="relative flex-1 max-w-xl">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
         <input
-          className="input pl-10 pr-16"
+          className="input pl-10 pr-9"
           placeholder="Buscar eventos, tareas o personas..."
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setSearchOpen(true);
+          }}
+          onFocus={() => setSearchOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              setQuery("");
+              setSearchOpen(false);
+            }
+          }}
         />
-        <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-md border border-ink-200 bg-ink-50 px-1.5 py-0.5 text-[10px] font-medium text-ink-500">
-          ⌘K
-        </kbd>
+        {query && (
+          <button
+            onClick={() => {
+              setQuery("");
+              setSearchOpen(false);
+            }}
+            aria-label="Limpiar búsqueda"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+
+        {searchOpen && query.trim().length >= 2 && (
+          <>
+            <div className="fixed inset-0 z-20" onClick={() => setSearchOpen(false)} />
+            <div className="absolute left-0 right-0 z-30 mt-2 max-h-96 overflow-y-auto rounded-2xl border border-ink-100 bg-white p-2 shadow-pop">
+              {!hasResults && (
+                <p className="px-2 py-6 text-center text-sm text-ink-400">Sin resultados para “{query}”.</p>
+              )}
+
+              {results.events.length > 0 && (
+                <>
+                  <p className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-400">Eventos</p>
+                  {results.events.map((e) => (
+                    <button
+                      key={e.id}
+                      onClick={() => goTo(`/eventos/${e.id}`)}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left hover:bg-ink-50"
+                    >
+                      <span className="text-base">{e.coverEmoji}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-ink-900">{e.name}</span>
+                        <span className="block truncate text-xs text-ink-500">{e.status}</span>
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
+
+              {results.tasks.length > 0 && (
+                <>
+                  <p className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-400">Tareas</p>
+                  {results.tasks.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => goTo(`/eventos/${t.eventId}`)}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left hover:bg-ink-50"
+                    >
+                      <ListChecks className="h-4 w-4 shrink-0 text-ink-400" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-ink-900">{t.name}</span>
+                        <span className="block truncate text-xs text-ink-500">Vence {t.dueDate}</span>
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
+
+              {results.people.length > 0 && (
+                <>
+                  <p className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-ink-400">Personas</p>
+                  {results.people.map((u) => (
+                    <button
+                      key={u.id}
+                      onClick={() => goTo(currentUser?.role === "admin" ? "/equipo" : "/perfil")}
+                      className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left hover:bg-ink-50"
+                    >
+                      <Avatar name={u.name} color={u.color} size="sm" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-ink-900">{u.name}</span>
+                        <span className="block truncate text-xs text-ink-500">{u.title ?? u.email}</span>
+                      </span>
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
@@ -123,7 +224,14 @@ export function Topbar() {
                 </>
               )}
               <div className="my-2 h-px bg-ink-100" />
-              <button className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">
+              <button
+                onClick={async () => {
+                  setMenuOpen(false);
+                  await logout();
+                  router.replace("/login");
+                }}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50"
+              >
                 <LogOut className="h-4 w-4" /> Cerrar sesión
               </button>
             </div>

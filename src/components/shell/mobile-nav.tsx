@@ -136,7 +136,11 @@ export function MobileNav() {
 
             <div className="my-2 h-px bg-ink-100" />
             <button
-              onClick={() => { setSheet(false); logout(); }}
+              onClick={async () => {
+                setSheet(false);
+                await logout();
+                router.replace("/login");
+              }}
               className="flex w-full items-center gap-3.5 rounded-xl px-3 py-3.5 text-left text-[15px] font-medium text-rose-600 active:bg-rose-50"
             >
               <LogOut className="h-5 w-5" /> Cerrar sesión

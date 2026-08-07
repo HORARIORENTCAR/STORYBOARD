@@ -1,7 +1,6 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "./supabase";
 import {
   AppNotification,
@@ -193,6 +192,10 @@ interface AppContextValue extends StoredState {
   updateSettings: (patch: Partial<InstitutionSettings>) => Promise<void>;
   addUser: (data: { name: string; email: string; role: "admin" | "member"; title?: string; area?: string }) => Promise<string | void>;
   updateUserRole: (id: string, role: "admin" | "member") => Promise<void>;
+  updateProfile: (patch: { name?: string; title?: string; area?: string }) => Promise<void>;
+  removeUser: (id: string) => Promise<string | void>;
+  resendInvite: (email: string) => Promise<string | void>;
+  searchAll: (q: string) => { events: SchoolEvent[]; tasks: EventTask[]; people: StaffUser[] };
   markAllNotificationsRead: () => Promise<void>;
   login: (email: string, password: string) => Promise<string | void>;
   logout: () => Promise<void>;
@@ -296,9 +299,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return next;
     };
 
-    const channel = supabase
-      .channel("staff-board-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, (payload: RealtimePostgresChangesPayload<any>) => {
+    // El tipado de los canales de Realtime es muy estricto; lo relajamos aquí
+    // porque el contenido de cada fila ya se normaliza en las funciones map*.
+    const channel = (supabase.channel("staff-board-realtime") as any)
+      .on("postgres_changes", { event: "*", schema: "public", table: "events" }, (payload: any) => {
         setState((prev) => {
           const deleted = payload.eventType === "DELETE";
           const row = deleted ? payload.old : payload.new;
@@ -306,7 +310,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return { ...prev, events: upsert(prev.events, mapEvent(row, taskIds), deleted) };
         });
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "event_tasks" }, (payload: RealtimePostgresChangesPayload<any>) => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "event_tasks" }, (payload: any) => {
         setState((prev) => {
           const deleted = payload.eventType === "DELETE";
           const row = deleted ? payload.old : payload.new;
@@ -320,7 +324,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         });
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "task_chat_messages" }, (payload: RealtimePostgresChangesPayload<any>) => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "task_chat_messages" }, (payload: any) => {
         setState((prev) => {
           const deleted = payload.eventType === "DELETE";
           const row = deleted ? payload.old : payload.new;
@@ -334,7 +338,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         });
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, (payload: RealtimePostgresChangesPayload<any>) => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, (payload: any) => {
         setState((prev) => {
           const deleted = payload.eventType === "DELETE";
           const row = deleted ? payload.old : payload.new;
@@ -707,9 +711,79 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, users: prev.users.map((u) => (u.id === id ? { ...u, role } : u)) }));
   }, []);
 
+  /** Cada quien edita su propia ficha; se guarda de verdad en la base de datos. */
+  const updateProfile: AppContextValue["updateProfile"] = useCallback(
+    async (patch) => {
+      if (!supabase) return;
+      const id = stateRef.current.currentUserId;
+      if (!id) return;
+      const dbPatch: Record<string, unknown> = {};
+      if (patch.name !== undefined) {
+        dbPatch.name = patch.name;
+        dbPatch.initials = patch.name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
+      }
+      if (patch.title !== undefined) dbPatch.title = patch.title;
+      if (patch.area !== undefined) dbPatch.area = patch.area;
+      await supabase.from("profiles").update(dbPatch).eq("id", id);
+      setState((prev) => ({
+        ...prev,
+        users: prev.users.map((u) => (u.id === id ? { ...u, ...patch } : u)),
+      }));
+      logHistory("actualizó su perfil", patch.name ?? "", "Equipo");
+    },
+    [logHistory]
+  );
+
+  /** Saca a alguien del equipo. Las protecciones reales viven en /api/remove-user. */
+  const removeUser: AppContextValue["removeUser"] = useCallback(
+    async (id) => {
+      const person = stateRef.current.users.find((u) => u.id === id);
+      const res = await fetch("/api/remove-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: id, requesterId: stateRef.current.currentUserId }),
+      });
+      const body = await res.json();
+      if (!res.ok) return body.error ?? "No se pudo eliminar a esa persona.";
+      setState((prev) => ({ ...prev, users: prev.users.filter((u) => u.id !== id) }));
+      logHistory("eliminó del equipo a", person?.name ?? "", "Equipo");
+    },
+    [logHistory]
+  );
+
+  /** Reenvía el correo para que la persona cree (o recupere) su contraseña. */
+  const resendInvite: AppContextValue["resendInvite"] = useCallback(async (email) => {
+    if (!supabase) return "Supabase no está configurado";
+    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) return error.message;
+  }, []);
+
   const myNotifications = useMemo(
     () => state.notifications.filter((n) => n.audience === "all" || (Array.isArray(n.audience) && n.audience.includes(currentUser?.id ?? ""))),
     [state.notifications, currentUser]
+  );
+
+  /** Búsqueda global de la barra superior. Respeta lo que cada quien puede ver. */
+  const searchAll: AppContextValue["searchAll"] = useCallback(
+    (q) => {
+      const term = q.trim().toLowerCase();
+      if (term.length < 2) return { events: [], tasks: [], people: [] };
+      const visible = state.events.filter(
+        (e) => e.status === "publicado" || e.createdBy === currentUser?.id || isAdmin
+      );
+      const visibleIds = new Set(visible.map((e) => e.id));
+      return {
+        events: visible.filter((e) => `${e.name} ${e.description}`.toLowerCase().includes(term)).slice(0, 5),
+        tasks: state.tasks
+          .filter((t) => !t.archived && visibleIds.has(t.eventId) && `${t.name} ${t.description}`.toLowerCase().includes(term))
+          .slice(0, 5),
+        people: state.users
+          .filter((u) => `${u.name} ${u.email} ${u.title ?? ""} ${u.area ?? ""}`.toLowerCase().includes(term))
+          .slice(0, 5),
+      };
+    },
+    [state.events, state.tasks, state.users, currentUser, isAdmin]
   );
 
   const hasEvidence: AppContextValue["hasEvidence"] = useCallback((task) => task.evidence.length + task.attachments.length > 0, []);
@@ -732,8 +806,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const logout: AppContextValue["logout"] = useCallback(async () => {
-    if (!supabase) return;
-    await supabase.auth.signOut();
+    // Limpiamos el estado local aunque la llamada a la red falle, para que
+    // "Cerrar sesión" nunca deje a la persona atrapada dentro de la app.
+    try {
+      if (supabase) await supabase.auth.signOut();
+    } catch {
+      // sin conexión: igual cerramos la sesión de este dispositivo
+    }
+    setState({ ...emptyState, loading: false });
   }, []);
 
   const value: AppContextValue = {
@@ -776,6 +856,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     updateSettings,
     addUser,
     updateUserRole,
+    updateProfile,
+    removeUser,
+    resendInvite,
+    searchAll,
     markAllNotificationsRead,
     login,
     logout,

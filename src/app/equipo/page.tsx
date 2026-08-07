@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, UserPlus, ShieldCheck, MoreHorizontal } from "lucide-react";
+import { Search, UserPlus, ShieldCheck, MoreHorizontal, Mail, Trash2 } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { useApp } from "@/lib/store";
@@ -11,9 +11,11 @@ import { cx } from "@/lib/utils";
 import { Role } from "@/lib/types";
 
 export default function EquipoPage() {
-  const { users, addUser, updateUserRole, settings, currentUser } = useApp();
+  const { users, addUser, updateUserRole, settings, currentUser, removeUser, resendInvite } = useApp();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
 
   const filtered = useMemo(
     () => users.filter((u) => `${u.name} ${u.email} ${u.title ?? ""}`.toLowerCase().includes(query.toLowerCase())),
@@ -49,6 +51,13 @@ export default function EquipoPage() {
         <MiniStat label="cuentas activas" value={active} />
         <MiniStat label="administradores" value={admins} />
       </div>
+
+      {notice && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">
+          <span>{notice}</span>
+          <button onClick={() => setNotice("")} className="text-brand-700 hover:underline">Cerrar</button>
+        </div>
+      )}
 
       <div className="mb-4 relative max-w-md">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
@@ -87,9 +96,53 @@ export default function EquipoPage() {
                 <ShieldCheck className="h-3 w-3" /> {u.status === "active" ? "Activa" : "Invitada"}
               </span>
               <span className="text-xs text-ink-400">{u.joinedAt}</span>
-              <button className="text-ink-400 hover:text-ink-700">
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setMenuFor(menuFor === u.id ? null : u.id)}
+                  aria-label={`Acciones para ${u.name}`}
+                  className="text-ink-400 hover:text-ink-700"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+                {menuFor === u.id && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setMenuFor(null)} />
+                    <div className="absolute right-0 z-30 mt-2 w-60 rounded-2xl border border-ink-100 bg-white p-2 shadow-pop">
+                      <button
+                        onClick={async () => {
+                          setMenuFor(null);
+                          const err = await resendInvite(u.email);
+                          setNotice(err ? err : `Se envió un correo de acceso a ${u.email}.`);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-ink-700 hover:bg-ink-50"
+                      >
+                        <Mail className="h-4 w-4 text-ink-400" />
+                        {u.status === "invited" ? "Reenviar invitación" : "Enviar acceso por correo"}
+                      </button>
+                      <div className="my-1 h-px bg-ink-100" />
+                      <button
+                        disabled={u.id === currentUser?.id || (u.role === "admin" && admins <= 1)}
+                        onClick={async () => {
+                          setMenuFor(null);
+                          if (!window.confirm(`¿Eliminar a ${u.name} del equipo? Sus eventos pasarán a tu cuenta.`)) return;
+                          const err = await removeUser(u.id);
+                          setNotice(err ? err : `${u.name} fue eliminado del equipo.`);
+                        }}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-ink-300 disabled:hover:bg-transparent"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Eliminar del equipo
+                      </button>
+                      {u.id === currentUser?.id && (
+                        <p className="px-3 pb-1 pt-0.5 text-[11px] text-ink-400">No puedes eliminarte a ti mismo.</p>
+                      )}
+                      {u.role === "admin" && admins <= 1 && u.id !== currentUser?.id && (
+                        <p className="px-3 pb-1 pt-0.5 text-[11px] text-ink-400">Es el único administrador.</p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         ))}

@@ -19,8 +19,37 @@ export function PwaSetup() {
 
   useEffect(() => {
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
-        /* sin service worker la app sigue funcionando, solo pierde el modo sin conexión */
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((reg) => {
+          // Buscar actualizaciones al abrir y cada 60 segundos. Sin esto,
+          // el celular puede quedarse con una versión vieja de la app.
+          reg.update().catch(() => {});
+          const timer = window.setInterval(() => reg.update().catch(() => {}), 60_000);
+          window.addEventListener("beforeunload", () => window.clearInterval(timer));
+
+          // Cuando llega una versión nueva, activarla sin esperar.
+          reg.addEventListener("updatefound", () => {
+            const nuevo = reg.installing;
+            if (!nuevo) return;
+            nuevo.addEventListener("statechange", () => {
+              if (nuevo.state === "installed" && navigator.serviceWorker.controller) {
+                nuevo.postMessage("SKIP_WAITING");
+              }
+            });
+          });
+        })
+        .catch(() => {
+          /* sin service worker la app sigue funcionando, solo pierde el modo sin conexión */
+        });
+
+      // Al tomar el control la versión nueva, recargar una sola vez
+      // para que la persona vea de inmediato las correcciones publicadas.
+      let recargado = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (recargado) return;
+        recargado = true;
+        window.location.reload();
       });
     }
 
