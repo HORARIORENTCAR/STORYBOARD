@@ -14,8 +14,7 @@ import {
   Settings,
   Sparkles,
   Lightbulb,
-  Eye,
-} from "lucide-react";
+  Eye,, ChevronRight } from "lucide-react";
 import { cx } from "@/lib/utils";
 import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
@@ -140,7 +139,11 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-white/10 p-4">
-        <div className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-white/5">
+        <Link
+          href="/perfil"
+          title="Ver y editar mi perfil"
+          className="flex items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-white/5"
+        >
           <Avatar name={currentUser?.name ?? ""} color={currentUser?.color} size="sm" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-white">{currentUser?.name}</p>
@@ -148,7 +151,8 @@ export function Sidebar() {
               {currentUser?.role === "admin" ? "Administrador" : currentUser?.title ?? "Colaborador"}
             </p>
           </div>
-        </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-ink-500" />
+        </Link>
       </div>
     </aside>
   );

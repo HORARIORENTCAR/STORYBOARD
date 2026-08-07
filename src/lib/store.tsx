@@ -196,6 +196,7 @@ interface AppContextValue extends StoredState {
   removeUser: (id: string) => Promise<string | void>;
   resendInvite: (email: string) => Promise<string | void>;
   searchAll: (q: string) => { events: SchoolEvent[]; tasks: EventTask[]; people: StaffUser[] };
+  markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
   login: (email: string, password: string) => Promise<string | void>;
   logout: () => Promise<void>;
@@ -792,6 +793,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [state.settings.requireEvidence, hasEvidence]
   );
 
+  /** Marca una sola notificación como leída (al tocarla en la campana). */
+  const markNotificationRead: AppContextValue["markNotificationRead"] = useCallback(async (id) => {
+    if (!supabase) return;
+    const actual = stateRef.current.notifications.find((n) => n.id === id);
+    if (!actual || actual.read) return;
+    setState((prev) => ({
+      ...prev,
+      notifications: prev.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)),
+    }));
+    await supabase.rpc("mark_notification_read", { p_notification_id: id });
+  }, []);
+
   const markAllNotificationsRead: AppContextValue["markAllNotificationsRead"] = useCallback(async () => {
     if (!supabase) return;
     const unread = stateRef.current.notifications.filter((n) => !n.read);
@@ -860,6 +873,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     removeUser,
     resendInvite,
     searchAll,
+    markNotificationRead,
     markAllNotificationsRead,
     login,
     logout,

@@ -9,7 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { timeAgo, cx } from "@/lib/utils";
 
 export function Topbar() {
-  const { currentUser, myNotifications, markAllNotificationsRead, logout, searchAll } = useApp();
+  const { currentUser, myNotifications, markAllNotificationsRead, markNotificationRead, logout, searchAll } = useApp();
   const router = useRouter();
   const notifications = myNotifications; // cada quien ve solo lo suyo
   const [notifOpen, setNotifOpen] = useState(false);
@@ -155,10 +155,12 @@ export function Topbar() {
                   <p className="px-2 py-6 text-center text-sm text-ink-400">No tienes notificaciones.</p>
                 )}
                 {notifications.map((n) => (
-                  <div
+                  <button
                     key={n.id}
+                    onClick={() => markNotificationRead(n.id)}
+                    title={n.read ? "Ya leída" : "Marcar como leída"}
                     className={cx(
-                      "rounded-xl px-3 py-2.5 transition-colors hover:bg-ink-50",
+                      "w-full rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-ink-50",
                       !n.read && "bg-brand-50/60"
                     )}
                   >
@@ -178,7 +180,7 @@ export function Topbar() {
                         {n.audience === "all" ? "Todo el personal" : "Para ti"}
                       </span>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
