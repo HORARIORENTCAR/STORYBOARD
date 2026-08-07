@@ -32,7 +32,8 @@ function buildMonthGrid(year: number, month: number) {
 
 export default function CalendarioPage() {
   const { calendar, addCalendarEntry, removeCalendarEntry, isAdmin, settings, updateSettings, uploadFile } = useApp();
-  const [cursor, setCursor] = useState(new Date(2026, 7, 1));
+  const ahora = new Date();
+  const [cursor, setCursor] = useState(new Date(ahora.getFullYear(), ahora.getMonth(), 1));
   const [createOpen, setCreateOpen] = useState(false);
   const [subiendoOficial, setSubiendoOficial] = useState(false);
   const [avisoOficial, setAvisoOficial] = useState("");
@@ -60,7 +61,7 @@ export default function CalendarioPage() {
   const upcoming = useMemo(
     () =>
       calendar
-        .filter((c) => new Date(c.date + "T00:00:00").getTime() >= new Date(2026, 7, 3).getTime())
+        .filter((c) => new Date(c.date + "T00:00:00").getTime() >= new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate()).getTime())
         .sort((a, b) => a.date.localeCompare(b.date))
         .slice(0, 5),
     [calendar]
@@ -208,7 +209,7 @@ export default function CalendarioPage() {
             {cells.map((day, idx) => {
               if (day === null) return <div key={idx} className="min-h-[92px] rounded-xl" />;
               const dayEntries = entriesByDay.get(day) ?? [];
-              const isToday = year === 2026 && month === 7 && day === 3;
+              const isToday = year === ahora.getFullYear() && month === ahora.getMonth() && day === ahora.getDate();
               return (
                 <button
                   key={idx}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CalendarDays, ClipboardList, Users2, ArrowRight, Sparkles } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { useApp } from "@/lib/store";
@@ -10,14 +10,22 @@ import { EventFormModal } from "@/components/events/event-form-modal";
 import { Avatar } from "@/components/ui/avatar";
 
 export default function MuroPage() {
-  const { events, wallEvents, tasks, currentUser } = useApp();
+  const { wallEvents, liveTasks, currentUser } = useApp();
   const [createOpen, setCreateOpen] = useState(false);
 
   const published = wallEvents; // el muro es común: solo publicados
-  const activeTasks = tasks.filter((t) => t.status !== "terminada").length;
-  const collaboratorSpaces = new Set(
-    events.flatMap((e) => (e.status === "publicado" ? [e.createdBy] : []))
-  ).size + tasks.length;
+
+  /* Las cifras del muro miran solo lo que está publicado y vivo. */
+  const idsPublicados = useMemo(() => new Set(wallEvents.map((e) => e.id)), [wallEvents]);
+  const tareasDelMuro = useMemo(
+    () => liveTasks.filter((t) => idsPublicados.has(t.eventId)),
+    [liveTasks, idsPublicados]
+  );
+  const activeTasks = tareasDelMuro.filter((t) => t.status !== "terminada").length;
+  /** Lugares realmente libres en los que alguien puede inscribirse hoy. */
+  const collaboratorSpaces = tareasDelMuro
+    .filter((t) => t.status !== "terminada")
+    .reduce((suma, t) => suma + t.slots.filter((sl) => !sl.userId).length, 0);
 
   const firstName = currentUser?.name.split(" ")[0] ?? "";
 

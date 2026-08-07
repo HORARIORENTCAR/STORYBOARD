@@ -199,6 +199,8 @@ interface AppContextValue extends StoredState {
   notify: (title: string, detail: string, audience?: "all" | string[]) => Promise<void>;
   setExecStatus: (taskId: string, status: TaskExecStatus) => Promise<string | void>;
   addChatMessage: (taskId: string, text: string, adjuntos?: File[]) => Promise<string | void>;
+  /** Vuelve a traer la conversación de una tarea (al abrirla o tras inscribirse). */
+  refreshTaskChat: (taskId: string) => Promise<void>;
   toggleReaction: (taskId: string, messageId: string, emoji: "👍" | "❤️" | "✅") => Promise<void>;
   /** Sube un archivo real y devuelve su enlace público. */
   uploadFile: (file: File, carpeta: string) => Promise<{ url: string; name: string } | string>;
@@ -248,6 +250,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       list.push(mapChat(r));
       chatByTask.set(r.task_id, list);
     });
+    chatByTask.forEach((lista) => lista.sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
     const tasks = (tasksR.data ?? []).map((r) => mapTask(r, chatByTask.get(r.id) ?? []));
     const taskIdsByEvent = new Map<string, string[]>();
     tasks.forEach((t) => {
@@ -350,7 +353,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             ...prev,
             tasks: prev.tasks.map((t) => {
               if (t.id !== row.task_id) return t;
-              const chat = upsert(t.chat, mapChat(row), deleted);
+              const chat = upsert(t.chat, mapChat(row), deleted).sort((a, b) =>
+                a.createdAt.localeCompare(b.createdAt)
+              );
               return { ...t, chat };
             }),
           };
@@ -703,15 +708,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           uploadedAt: new Date().toISOString(),
         });
       }
-      const { error } = await supabase.rpc("add_chat_message", {
+      const { data, error } = await supabase.rpc("add_chat_message", {
         p_task_id: taskId,
         p_text: text,
         p_attachments: subidos,
       });
       if (error) return error.message;
+
+      // Mostrarlo de inmediato sin esperar al aviso en tiempo real.
+      // Si el aviso llega después, el mismo id evita que se duplique.
+      const fila = Array.isArray(data) ? data[0] : data;
+      if (fila?.id) {
+        const nuevo = mapChat(fila);
+        setState((prev) => ({
+          ...prev,
+          tasks: prev.tasks.map((t) =>
+            t.id !== taskId
+              ? t
+              : {
+                  ...t,
+                  chat: [...t.chat.filter((m) => m.id !== nuevo.id), nuevo].sort((a, b) =>
+                    a.createdAt.localeCompare(b.createdAt)
+                  ),
+                }
+          ),
+        }));
+      }
     },
     [uploadFile]
   );
+
+  const refreshTaskChat: AppContextValue["refreshTaskChat"] = useCallback(async (taskId) => {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from("task_chat_messages")
+      .select("*")
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: true });
+    if (error || !data) return;
+    const chat = data.map(mapChat);
+    setState((prev) => ({
+      ...prev,
+      tasks: prev.tasks.map((t) => (t.id === taskId ? { ...t, chat } : t)),
+    }));
+  }, []);
 
   const toggleReaction: AppContextValue["toggleReaction"] = useCallback(async (_taskId, messageId, emoji) => {
     if (!supabase) return;
@@ -974,6 +1014,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState({ ...emptyState, loading: false });
   }, []);
 
+  /**
+   * Mantenimiento automático: archiva lo vencido y avisa de fechas próximas.
+   * Antes solo ocurría si alguien entraba a Configuración y guardaba, así que
+   * en la práctica nunca pasaba. Lo corre un administrador, una vez por sesión,
+   * porque es quien tiene permiso para modificar las tareas.
+   */
+  const mantenimientoHecho = useRef(false);
+  useEffect(() => {
+    if (!state.loggedIn || state.loading || mantenimientoHecho.current) return;
+    if (currentUser?.role !== "admin") return;
+    if (state.tasks.length === 0) return;
+    mantenimientoHecho.current = true;
+    const t = window.setTimeout(() => {
+      runArchiveSweep();
+      runDeadlineAlerts();
+    }, 1500);
+    return () => window.clearTimeout(t);
+  }, [state.loggedIn, state.loading, state.tasks.length, currentUser, runArchiveSweep, runDeadlineAlerts]);
+
   const value: AppContextValue = {
     ...state,
     currentUser,
@@ -1007,6 +1066,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     runDeadlineAlerts,
     setExecStatus,
     addChatMessage,
+    refreshTaskChat,
     toggleReaction,
     uploadFile,
     addEvidence,

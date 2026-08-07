@@ -12,18 +12,19 @@ import { ProgressBar } from "@/components/ui/progress";
 import { TaskDetailModal } from "./task-detail-modal";
 
 export function TaskCard({ task, showEventName = false }: { task: EventTask; showEventName?: boolean }) {
-  const { userById, eventById, claimSlot, cancelSlot, joinWaitlist, leaveWaitlist, hasEvidence, settings, currentUser } = useApp();
+  const { userById, eventById, claimSlot, cancelSlot, joinWaitlist, leaveWaitlist, settings, currentUser } = useApp();
   const [open, setOpen] = useState(false);
   const [aviso, setAviso] = useState("");
   const [ocupado, setOcupado] = useState(false);
   const event = eventById(task.eventId);
+  /** En un evento finalizado o archivado ya no se entra ni se sale. */
+  const eventoCerrado = event?.status === "finalizado" || event?.status === "archivado";
   const tokens = colorTokens[task.color];
   const { filled, total, pct } = slotProgress(task);
   const full = isTaskFull(task);
   const alreadyIn = task.slots.some((s) => s.userId === currentUser?.id);
   const inWaitlist = task.waitlist.includes(currentUser?.id ?? "");
   const waitPos = task.waitlist.indexOf(currentUser?.id ?? "") + 1;
-  const needsEvidence = settings.requireEvidence && task.status !== "terminada" && !hasEvidence(task);
 
   // Cuenta regresiva viva para deshacer la inscripción recién hecha.
   const mySlot = task.slots.find((s) => s.userId === currentUser?.id);
@@ -100,12 +101,6 @@ export function TaskCard({ task, showEventName = false }: { task: EventTask; sho
             </p>
           )}
 
-          {needsEvidence && (
-            <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
-              <AlertTriangle className="h-3.5 w-3.5" /> Requiere evidencia para cerrarse
-            </p>
-          )}
-
           {collaborators.length > 0 && (
             <div className="mt-3 flex -space-x-2">
               {collaborators.slice(0, 4).map((c) => (
@@ -120,7 +115,11 @@ export function TaskCard({ task, showEventName = false }: { task: EventTask; sho
           )}
         </div>
         <div className="border-t border-ink-100 px-4 py-3">
-          {alreadyIn && secsLeft > 0 ? (
+          {eventoCerrado ? (
+            <button onClick={() => setOpen(true)} className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-ink-500 hover:underline">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Evento cerrado — ver detalle
+            </button>
+          ) : alreadyIn && secsLeft > 0 ? (
             <div className="-m-0.5 flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
               <p className="flex items-start gap-1.5 text-left text-xs leading-relaxed text-amber-800">
                 <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />

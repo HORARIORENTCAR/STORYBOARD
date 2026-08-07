@@ -21,7 +21,7 @@ const statusLabel: Record<TaskExecStatus, string> = {
 };
 
 export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClose: () => void; task: EventTask }) {
-  const { userById, eventById, currentUser, isAdmin, canDeleteTask, claimSlot, cancelSlot, joinWaitlist, leaveWaitlist, hasEvidence, canFinishTask, setExecStatus, addChatMessage, toggleReaction, addEvidence, removeEvidence, deleteTask, settings } =
+  const { userById, eventById, currentUser, isAdmin, canDeleteTask, claimSlot, cancelSlot, joinWaitlist, leaveWaitlist, hasEvidence, canFinishTask, setExecStatus, addChatMessage, refreshTaskChat, toggleReaction, addEvidence, removeEvidence, deleteTask, settings } =
     useApp();
   const [tab, setTab] = useState<"detalle" | "chat" | "evidencias">("detalle");
   const [message, setMessage] = useState("");
@@ -56,7 +56,8 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
   const { filled, total, pct } = slotProgress(task);
   const full = isTaskFull(task);
   const mySlot = task.slots.find((s) => s.userId === currentUser?.id);
-  const canManage = isAdmin || canDeleteTask(task);
+  const eventoCerrado = event?.status === "finalizado" || event?.status === "archivado";
+  const canManage = (isAdmin || canDeleteTask(task)) && !eventoCerrado;
   const inWaitlist = task.waitlist.includes(currentUser?.id ?? "");
   const waitPos = task.waitlist.indexOf(currentUser?.id ?? "") + 1;
   const evidenceOk = canFinishTask(task);
@@ -79,6 +80,13 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
   useEffect(() => {
     if (tab === "chat") chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [tab, task.chat.length]);
+
+  // Al abrir la tarea traemos la conversación fresca. Hace falta sobre todo
+  // después de inscribirse: antes no se tenía permiso para leerla.
+  useEffect(() => {
+    if (open) refreshTaskChat(task.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, task.id, task.slots.map((sl) => sl.userId).join(",")]);
 
   /** Ejecuta una acción y, si el servidor la rechaza, muestra por qué. */
   async function ejecutar(accion: () => Promise<string | void>) {
@@ -371,7 +379,11 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
         <div className="flex h-[420px] flex-col">
           <div className="flex-1 space-y-4 overflow-y-auto pr-1">
             {task.chat.length === 0 && (
-              <p className="py-10 text-center text-sm text-ink-400">Aún no hay mensajes. Sé el primero en escribir.</p>
+              <p className="py-10 text-center text-sm text-ink-400">
+                {canWrite
+                  ? "Aún no hay mensajes. Sé el primero en escribir."
+                  : "La conversación es privada del equipo de esta tarea. Inscríbete para verla."}
+              </p>
             )}
             {task.chat.map((m) => {
               const author = userById(m.authorId);

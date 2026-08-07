@@ -17,7 +17,7 @@ type TabKey = "todos" | "borradores" | "publicados" | "cerrados";
  * son privados: ningún otro miembro puede verlos hasta que se publiquen.
  */
 export default function EspacioPage() {
-  const { myEvents, tasks } = useApp();
+  const { myEvents, liveTasks: tasks } = useApp();
   const [tab, setTab] = useState<TabKey>("todos");
   const [createOpen, setCreateOpen] = useState(false);
 

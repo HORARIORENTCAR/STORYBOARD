@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { useApp } from "@/lib/store";
 import { EventColor, EventStatus, SchoolEvent } from "@/lib/types";
-import { X, Upload } from "lucide-react";
+import { X, Upload, Lock } from "lucide-react";
 import { cx } from "@/lib/utils";
 
 const colorOptions: { value: EventColor; hex: string }[] = [
@@ -14,6 +14,13 @@ const colorOptions: { value: EventColor; hex: string }[] = [
   { value: "violet", hex: "#7c3aed" },
   { value: "rose", hex: "#e11d48" },
 ];
+
+const estadoLabel: Record<EventStatus, string> = {
+  borrador: "Borrador",
+  publicado: "Publicado",
+  finalizado: "Finalizado",
+  archivado: "Archivado",
+};
 
 const emojiOptions = ["📌", "🎓", "🔬", "🎉", "🇩🇴", "🤝", "🎄", "🎭", "🏕️", "📚", "🏆", "🎨"];
 
@@ -58,8 +65,12 @@ export function EventFormModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
+    if (dueDate && dueDate < eventDate) {
+      setAviso("La fecha límite no puede ser anterior a la fecha del evento.");
+      return;
+    }
     if (isEdit && event) {
-      updateEvent(event.id, { name, description, eventDate, dueDate: dueDate || undefined, status, color, coverEmoji: emoji, coverImage });
+      updateEvent(event.id, { name, description, eventDate, dueDate: dueDate || undefined, color, coverEmoji: emoji, coverImage });
     } else {
       createEvent({ name, description, eventDate, dueDate: dueDate || undefined, status, color, coverEmoji: emoji, coverImage });
     }
@@ -97,18 +108,31 @@ export function EventFormModal({
           </div>
           <div>
             <label className="label">Fecha límite (opcional)</label>
-            <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            <input type="date" className="input" value={dueDate} min={eventDate || undefined} onChange={(e) => setDueDate(e.target.value)} />
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="label">Estado</label>
-            <select className="input" value={status} onChange={(e) => setStatus(e.target.value as EventStatus)}>
-              <option value="borrador">Borrador</option>
-              <option value="publicado">Publicado</option>
-              <option value="finalizado">Finalizado</option>
-              <option value="archivado">Archivado</option>
-            </select>
+            {isEdit ? (
+              <>
+                <label className="label">Estado</label>
+                <div className="flex h-[42px] items-center gap-2 rounded-xl border border-ink-200 bg-ink-50 px-3.5 text-sm text-ink-600">
+                  <Lock className="h-3.5 w-3.5 text-ink-400" />
+                  {estadoLabel[status]}
+                </div>
+                <p className="mt-1 text-xs text-ink-400">
+                  El estado se cambia con los botones Publicar, Finalizar o Archivar del evento.
+                </p>
+              </>
+            ) : (
+              <>
+                <label className="label">¿Cómo quieres guardarlo?</label>
+                <select className="input" value={status} onChange={(e) => setStatus(e.target.value as EventStatus)}>
+                  <option value="borrador">Borrador (solo lo veo yo)</option>
+                  <option value="publicado">Publicado (visible para todos)</option>
+                </select>
+              </>
+            )}
           </div>
           <div>
             <label className="label">Color identificador</label>

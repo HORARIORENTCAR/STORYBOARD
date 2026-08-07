@@ -215,9 +215,9 @@ export function Topbar() {
                 </div>
               </div>
               <div className="my-2 h-px bg-ink-100" />
-              <MenuLink href="/perfil" icon={UserCog} title="Mi perfil" subtitle="Nombre, cargo y datos de contacto" />
-              <MenuLink href="/configuracion" icon={SlidersHorizontal} title="Preferencias" subtitle="Vista inicial, idioma y apariencia" />
-              <MenuLink href="/historial" icon={History} title="Mis notificaciones" subtitle="Alertas por correo y resumen semanal" />
+              <MenuLink href="/perfil" icon={UserCog} title="Mi perfil" subtitle="Nombre, cargo y área" />
+              <MenuLink href="/agenda" icon={SlidersHorizontal} title="Mi agenda" subtitle="Mis tareas y próximas fechas" />
+              <MenuLink href="/historial" icon={History} title="Historial de actividad" subtitle="Todo lo que ha pasado en la plataforma" />
               {currentUser?.role === "admin" && (
                 <>
                   <div className="my-2 h-px bg-ink-100" />

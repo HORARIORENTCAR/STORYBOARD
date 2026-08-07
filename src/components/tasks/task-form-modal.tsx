@@ -26,7 +26,9 @@ export function TaskFormModal({
   eventId: string;
   task?: EventTask;
 }) {
-  const { createTask, updateTask, users, uploadFile } = useApp();
+  const { createTask, updateTask, users, uploadFile, eventById } = useApp();
+  const evento = eventById(eventId);
+  const [errorFecha, setErrorFecha] = useState("");
   const isEdit = !!task;
   const ocupados = task?.slots.filter((sl) => sl.userId).length ?? 0;
   const [referenceImage, setReferenceImage] = useState<string>("");
@@ -61,6 +63,14 @@ export function TaskFormModal({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
+
+    // La tarea no puede vencer después del evento: no tendría sentido.
+    const tope = evento?.dueDate || evento?.eventDate;
+    if (tope && dueDate > tope) {
+      setErrorFecha(`La fecha límite no puede ser posterior al ${tope} (fecha del evento).`);
+      return;
+    }
+    setErrorFecha("");
     if (isEdit && task) {
       updateTask(task.id, {
         name,
@@ -101,7 +111,17 @@ export function TaskFormModal({
           </div>
           <div>
             <label className="label">Fecha límite</label>
-            <input type="date" className="input" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            <input
+              type="date"
+              className="input"
+              value={dueDate}
+              max={evento?.dueDate || evento?.eventDate || undefined}
+              onChange={(e) => {
+                setDueDate(e.target.value);
+                setErrorFecha("");
+              }}
+            />
+            {errorFecha && <p className="mt-1 text-xs font-medium text-rose-600">{errorFecha}</p>}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">

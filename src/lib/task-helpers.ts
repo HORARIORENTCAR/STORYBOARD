@@ -39,13 +39,18 @@ export function cancelRemainingSeconds(claimedAt: string | null, windowMinutes: 
 /* ============================================================
    FECHAS: vencimiento, aviso previo y archivado automático
    ============================================================ */
-/** "Hoy" del colegio. La demostración vive en agosto de 2026. */
-export const HOY = "2026-08-03";
+/** Fecha de hoy, real. Antes estaba fija y descuadraba los días restantes. */
+export function hoy() {
+  const d = new Date();
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
 
 export function dayDiff(a: string, b: string) {
   return Math.round((new Date(b + "T00:00:00").getTime() - new Date(a + "T00:00:00").getTime()) / 86400000);
 }
-export const daysLeft = (task: EventTask) => dayDiff(HOY, task.dueDate);
+export const daysLeft = (task: EventTask) => dayDiff(hoy(), task.dueDate);
 export const isOverdue = (task: EventTask) => task.status !== "terminada" && daysLeft(task) < 0;
 export const isDueSoon = (task: EventTask) => {
   const d = daysLeft(task);

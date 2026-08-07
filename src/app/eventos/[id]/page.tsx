@@ -37,7 +37,7 @@ const columns: { key: TaskExecStatus; label: string }[] = [
 export default function EventDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { eventById, tasksForEvent, userById, canSeeEvent, canEditEvent, updateEvent, deleteEvent, duplicateEvent, loading } = useApp();
+  const { eventById, tasksForEvent, userById, canSeeEvent, canEditEvent, updateEvent, deleteEvent, duplicateEvent, loading, settings } = useApp();
   const [editOpen, setEditOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [aviso, setAviso] = useState("");
@@ -84,6 +84,47 @@ export default function EventDetailPage() {
   const tokens = colorTokens[event.color];
   const creator = userById(event.createdBy);
   const editable = canEditEvent(event);
+  const eventoCerrado = event.status === "finalizado" || event.status === "archivado";
+
+  /* ---------- Reglas del ciclo de vida del evento ---------- */
+  const tareasPendientes = tasks.filter((t) => t.status !== "terminada");
+  const sinEvidencia = tasks.filter(
+    (t) => t.status === "terminada" && settings.requireEvidence && t.evidence.length + t.attachments.length === 0
+  );
+
+  function publicar() {
+    if (tasks.length === 0) {
+      setAviso("Agrega al menos una tarea antes de publicar. Un evento sin tareas no le sirve al equipo.");
+      return;
+    }
+    updateEvent(event!.id, { status: "publicado" });
+    setAviso("Evento publicado. Ya es visible para todo el personal y pueden inscribirse en sus tareas.");
+  }
+
+  function finalizar() {
+    if (tasks.length === 0) {
+      setAviso("Este evento no tiene ninguna tarea, así que no hay nada que dar por terminado.");
+      return;
+    }
+    if (tareasPendientes.length > 0) {
+      setAviso(
+        `No se puede finalizar todavía: ${tareasPendientes.length} tarea(s) sin terminar (${tareasPendientes
+          .slice(0, 3)
+          .map((t) => t.name)
+          .join(", ")}${tareasPendientes.length > 3 ? "..." : ""}).`
+      );
+      return;
+    }
+    if (sinEvidencia.length > 0) {
+      setAviso(
+        `Faltan evidencias en ${sinEvidencia.length} tarea(s) terminada(s). Sube la foto o el documento final antes de cerrar el evento.`
+      );
+      return;
+    }
+    if (!window.confirm("¿Dar por finalizado este evento? Quedará cerrado, pero podrás reabrirlo si hace falta.")) return;
+    updateEvent(event!.id, { status: "finalizado" });
+    setAviso("Evento finalizado. Puedes reabrirlo o archivarlo cuando quieras.");
+  }
 
   function handleDelete() {
     if (!window.confirm(`¿Eliminar "${event!.name}"? Se borrarán también sus tareas, chats y evidencias. No se puede deshacer.`)) return;
@@ -140,22 +181,28 @@ export default function EventDetailPage() {
           {editable && (
             <div className="flex flex-wrap items-center gap-2">
               {event.status === "borrador" && (
-                <button onClick={() => updateEvent(event.id, { status: "publicado" })} className="btn-primary">
+                <button onClick={publicar} className="btn-primary">
                   <Send className="h-4 w-4" /> Publicar
                 </button>
               )}
 
               {/* Ciclo de vida completo: borrador -> publicado -> finalizado -> archivado */}
-              {event.status === "publicado" && (
+              {event.status === "publicado" && tasks.length > 0 && (
                 <button
-                  onClick={() => {
-                    if (window.confirm("¿Dar por finalizado este evento? Seguirá visible, pero se marcará como cerrado.")) {
-                      updateEvent(event.id, { status: "finalizado" });
-                    }
-                  }}
+                  onClick={finalizar}
+                  title={
+                    tareasPendientes.length > 0
+                      ? `Faltan ${tareasPendientes.length} tarea(s) por terminar`
+                      : "Cerrar el evento"
+                  }
                   className="btn-secondary"
                 >
                   <CheckCircle2 className="h-4 w-4" /> Finalizar
+                  {tareasPendientes.length > 0 && (
+                    <span className="ml-1 rounded-full bg-amber-100 px-1.5 text-[11px] font-semibold text-amber-800">
+                      {tareasPendientes.length}
+                    </span>
+                  )}
                 </button>
               )}
 
@@ -214,10 +261,13 @@ export default function EventDetailPage() {
           <p className="section-eyebrow">Colaboración</p>
           <h2 className="text-xl font-bold text-ink-900">Tareas del evento</h2>
         </div>
-        {editable && (
+        {editable && !eventoCerrado && (
           <button onClick={() => setCreateTaskOpen(true)} className="btn-primary">
             <Plus className="h-4 w-4" /> Crear tarea
           </button>
+        )}
+        {editable && eventoCerrado && (
+          <span className="text-xs text-ink-400">Evento cerrado: reábrelo para volver a editar sus tareas.</span>
         )}
       </div>
 

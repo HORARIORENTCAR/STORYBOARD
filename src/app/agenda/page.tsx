@@ -8,21 +8,38 @@ import { useApp } from "@/lib/store";
 import { formatDay, formatMonthShort, daysUntil } from "@/lib/utils";
 
 export default function AgendaPage() {
-  const { events, tasks, currentUser, history } = useApp();
+  const { events, liveTasks, currentUser, history } = useApp();
 
   const myEvents = events.filter((e) => e.createdBy === currentUser?.id);
   const activeEvents = events.filter((e) => e.status === "publicado");
-  const myTasks = tasks.filter((t) => t.slots.some((s) => s.userId === currentUser?.id));
+
+  /* Solo cuentan las tareas vivas: nada de eventos finalizados o archivados. */
+  const eventosAbiertos = useMemo(
+    () => new Set(events.filter((e) => e.status === "publicado" || e.status === "borrador").map((e) => e.id)),
+    [events]
+  );
+  const myTasks = useMemo(
+    () => liveTasks.filter((t) => eventosAbiertos.has(t.eventId) && t.slots.some((s) => s.userId === currentUser?.id)),
+    [liveTasks, eventosAbiertos, currentUser]
+  );
   const pendingMyTasks = myTasks.filter((t) => t.status !== "terminada");
   const completedMyTasks = myTasks.filter((t) => t.status === "terminada");
 
+  /* Próximas fechas: solo lo que sigue pendiente, lo más cercano primero. */
   const weekItems = useMemo(
     () =>
-      myTasks
-        .map((t) => ({ id: t.id, label: "Fecha límite", title: t.name, date: t.dueDate, eventName: events.find((e) => e.id === t.eventId)?.name ?? "" }))
+      pendingMyTasks
+        .map((t) => ({
+          id: t.id,
+          label: daysUntil(t.dueDate) < 0 ? "Vencida" : "Fecha límite",
+          title: t.name,
+          date: t.dueDate,
+          eventName: events.find((e) => e.id === t.eventId)?.name ?? "",
+        }))
         .sort((a, b) => a.date.localeCompare(b.date))
         .slice(0, 5),
-    [myTasks, events]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pendingMyTasks, events]
   );
 
   const nextDeadlineDays = weekItems.length > 0 ? Math.max(0, daysUntil(weekItems[0].date)) : null;
@@ -48,7 +65,9 @@ export default function AgendaPage() {
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/20">
               <div className="h-full rounded-full bg-white" style={{ width: `${monthPct}%` }} />
             </div>
-            <p className="mt-1.5 text-xs text-brand-100">{monthPct}% de tus tareas del mes completadas</p>
+            <p className="mt-1.5 text-xs text-brand-100">
+              {completedMyTasks.length} de {myTasks.length} tareas activas completadas ({monthPct}%)
+            </p>
           </div>
         </div>
         <StatCard icon={CalendarDays} value={activeEvents.length} label="Eventos activos" />
