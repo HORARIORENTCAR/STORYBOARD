@@ -14,7 +14,9 @@ import {
   Settings,
   Sparkles,
   Lightbulb,
-  Eye,, ChevronRight } from "lucide-react";
+  Eye,
+  ChevronRight,
+} from "lucide-react";
 import { cx } from "@/lib/utils";
 import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
