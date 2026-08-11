@@ -107,6 +107,8 @@ export interface CalendarEntry {
   motto?: string;
   /** Descripción larga: de qué se trata, quiénes participan, qué llevar. */
   description?: string;
+  /** Quiénes deben hacerla cumplir. Texto libre: nombres, curso, comisión... */
+  responsibles?: string;
 }
 
 export interface AppNotification {

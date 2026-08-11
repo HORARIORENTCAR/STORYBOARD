@@ -292,6 +292,9 @@ export default function CalendarioPage() {
                     <p className="text-xs text-ink-500">
                       {entry.location ?? "—"} {entry.time ? `· ${entry.time}` : ""}
                     </p>
+                    {entry.responsibles && (
+                      <p className="mt-0.5 truncate text-xs font-medium text-brand-700">{entry.responsibles}</p>
+                    )}
                     {entry.description && (
                       <p className="mt-0.5 line-clamp-2 text-xs text-ink-400">{entry.description}</p>
                     )}
@@ -340,6 +343,13 @@ export default function CalendarioPage() {
                 </span>
               )}
             </div>
+
+            {detalle.responsibles && (
+              <div className="rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-2.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-brand-700">Responsables</p>
+                <p className="mt-0.5 text-sm text-brand-900">{detalle.responsibles}</p>
+              </div>
+            )}
 
             {detalle.motto && (
               <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm italic text-amber-800">“{detalle.motto}”</p>
@@ -410,6 +420,7 @@ function NewEntryModal({
             location: String(data.get("location") || ""),
             time: String(data.get("time") || ""),
             description: String(data.get("description") || ""),
+            responsibles: String(data.get("responsibles") || ""),
           });
           onClose();
         }}
@@ -445,6 +456,15 @@ function NewEntryModal({
             <label className="label">Hora (opcional)</label>
             <input name="time" className="input" placeholder="Ej. 2:00 p. m." />
           </div>
+        </div>
+        <div>
+          <label className="label">Responsables (opcional)</label>
+          <input
+            name="responsibles"
+            className="input"
+            placeholder="Ej. Comisión de Cultura · Daniela Fermín y 5to grado"
+          />
+          <p className="mt-1 text-xs text-ink-400">Quién debe hacerla cumplir. Escríbelo libremente.</p>
         </div>
         <div>
           <label className="label">Descripción (opcional)</label>
