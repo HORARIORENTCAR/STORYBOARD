@@ -53,6 +53,18 @@ export default function CalendarioPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [detalle, setDetalle] = useState<CalendarEntry | null>(null);
   const [editandoValor, setEditandoValor] = useState(false);
+  const [editandoFecha, setEditandoFecha] = useState(false);
+  const [borrador, setBorrador] = useState({
+    title: "",
+    date: "",
+    kind: "fecha" as CalendarEntry["kind"],
+    customKind: "",
+    location: "",
+    time: "",
+    responsibles: "",
+    description: "",
+    motto: "",
+  });
   const [valorTitulo, setValorTitulo] = useState("");
   const [valorLema, setValorLema] = useState("");
   const [subiendoOficial, setSubiendoOficial] = useState(false);
@@ -410,12 +422,147 @@ export default function CalendarioPage() {
 
       <Modal
         open={!!detalle}
-        onClose={() => setDetalle(null)}
+        onClose={() => {
+          setDetalle(null);
+          setEditandoFecha(false);
+        }}
         eyebrow={detalle ? nombreTipo(detalle) : "Calendario"}
-        title={detalle?.title ?? ""}
+        title={editandoFecha ? "Editar fecha" : detalle?.title ?? ""}
         size="sm"
       >
-        {detalle && (
+        {detalle && editandoFecha && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!borrador.title.trim()) return;
+              await updateCalendarEntry(detalle.id, {
+                title: borrador.title.trim(),
+                date: borrador.date,
+                kind: borrador.kind,
+                customKind: borrador.kind === "otro" ? borrador.customKind.trim() : "",
+                location: borrador.location.trim(),
+                time: borrador.time.trim(),
+                responsibles: borrador.responsibles.trim(),
+                description: borrador.description.trim(),
+                motto: borrador.motto.trim(),
+              });
+              setEditandoFecha(false);
+              setDetalle(null);
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <label className="label">Título</label>
+              <input
+                className="input"
+                value={borrador.title}
+                onChange={(e) => setBorrador({ ...borrador, title: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Fecha</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={borrador.date}
+                  onChange={(e) => setBorrador({ ...borrador, date: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">Tipo</label>
+                <select
+                  className="input"
+                  value={borrador.kind}
+                  onChange={(e) => setBorrador({ ...borrador, kind: e.target.value as CalendarEntry["kind"] })}
+                >
+                  <option value="evento">Evento</option>
+                  <option value="fecha">Fecha importante</option>
+                  <option value="valor">Valor del mes</option>
+                  <option value="reunion">Reunión</option>
+                  <option value="capacitacion">Capacitación</option>
+                  <option value="informe">Entrega de informes</option>
+                  <option value="otro">Otros...</option>
+                </select>
+              </div>
+            </div>
+
+            {borrador.kind === "otro" && (
+              <div>
+                <label className="label">Nombre de la categoría</label>
+                <input
+                  className="input"
+                  value={borrador.customKind}
+                  onChange={(e) => setBorrador({ ...borrador, customKind: e.target.value })}
+                  placeholder="Ej. Retiro espiritual, Jornada deportiva..."
+                  required
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Lugar (opcional)</label>
+                <input
+                  className="input"
+                  value={borrador.location}
+                  onChange={(e) => setBorrador({ ...borrador, location: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="label">Hora (opcional)</label>
+                <input
+                  className="input"
+                  value={borrador.time}
+                  onChange={(e) => setBorrador({ ...borrador, time: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Responsables (opcional)</label>
+              <input
+                className="input"
+                value={borrador.responsibles}
+                onChange={(e) => setBorrador({ ...borrador, responsibles: e.target.value })}
+              />
+            </div>
+
+            {borrador.kind === "valor" && (
+              <div>
+                <label className="label">Lema del mes (opcional)</label>
+                <input
+                  className="input"
+                  value={borrador.motto}
+                  onChange={(e) => setBorrador({ ...borrador, motto: e.target.value })}
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="label">Descripción (opcional)</label>
+              <textarea
+                rows={5}
+                className="input min-h-[120px] resize-y"
+                value={borrador.description}
+                onChange={(e) => setBorrador({ ...borrador, description: e.target.value })}
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
+              <button type="button" onClick={() => setEditandoFecha(false)} className="btn-secondary">
+                Cancelar
+              </button>
+              <button type="submit" className="btn-primary">
+                Guardar cambios
+              </button>
+            </div>
+          </form>
+        )}
+
+        {detalle && !editandoFecha && (
           <div className="space-y-4">
             <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-ink-600">
               <span>
@@ -456,7 +603,28 @@ export default function CalendarioPage() {
               <p className="text-sm text-ink-400">Esta fecha no tiene descripción.</p>
             )}
 
-            <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
+            <div className="flex flex-wrap justify-end gap-2 border-t border-ink-100 pt-4">
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    setBorrador({
+                      title: detalle.title,
+                      date: detalle.date,
+                      kind: detalle.kind,
+                      customKind: detalle.customKind ?? "",
+                      location: detalle.location ?? "",
+                      time: detalle.time ?? "",
+                      responsibles: detalle.responsibles ?? "",
+                      description: detalle.description ?? "",
+                      motto: detalle.motto ?? "",
+                    });
+                    setEditandoFecha(true);
+                  }}
+                  className="btn-secondary"
+                >
+                  <Pencil className="h-4 w-4" /> Editar
+                </button>
+              )}
               {isAdmin && (
                 <button
                   onClick={() => {
