@@ -103,8 +103,10 @@ export interface CalendarEntry {
   kind: "evento" | "fecha" | "valor" | "reunion" | "capacitacion" | "informe";
   location?: string;
   time?: string;
-  /** Lema o nota que acompaña la fecha (p. ej. el valor del mes). */
+  /** Lema o nota corta que acompaña la fecha (p. ej. el valor del mes). */
   motto?: string;
+  /** Descripción larga: de qué se trata, quiénes participan, qué llevar. */
+  description?: string;
 }
 
 export interface AppNotification {

@@ -147,7 +147,7 @@ function mapNotification(r: any, readIds: Set<string>): AppNotification {
   };
 }
 function mapCalendar(r: any): CalendarEntry {
-  return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined };
+  return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined, description: r.description ?? undefined };
 }
 function mapHistory(r: any): HistoryEntry {
   return { id: r.id, userId: r.user_id, action: r.action, detail: r.detail, type: r.type, createdAt: r.created_at };
@@ -792,6 +792,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         location: entry.location ?? null,
         time: entry.time ?? null,
         motto: entry.motto ?? null,
+        description: entry.description ?? null,
       });
       logHistory("agregó al calendario institucional", entry.title, "Calendario");
       // La especificación pide avisar a todo el personal de cualquier cambio del calendario.

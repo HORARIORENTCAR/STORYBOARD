@@ -9,6 +9,15 @@ import { Modal } from "@/components/ui/modal";
 import { CalendarEntry } from "@/lib/types";
 import { cx, formatDay, formatMonthShort } from "@/lib/utils";
 
+const kindLabel: Record<CalendarEntry["kind"], string> = {
+  evento: "Evento",
+  fecha: "Fecha importante",
+  valor: "Valor del mes",
+  reunion: "Reunión",
+  capacitacion: "Capacitación",
+  informe: "Entrega de informes",
+};
+
 const kindStyles: Record<CalendarEntry["kind"], string> = {
   evento: "bg-brand-100 text-brand-800",
   fecha: "bg-sky-100 text-sky-800",
@@ -35,6 +44,7 @@ export default function CalendarioPage() {
   const ahora = new Date();
   const [cursor, setCursor] = useState(new Date(ahora.getFullYear(), ahora.getMonth(), 1));
   const [createOpen, setCreateOpen] = useState(false);
+  const [detalle, setDetalle] = useState<CalendarEntry | null>(null);
   const [subiendoOficial, setSubiendoOficial] = useState(false);
   const [avisoOficial, setAvisoOficial] = useState("");
   const oficialRef = useRef<HTMLInputElement>(null);
@@ -226,7 +236,23 @@ export default function CalendarioPage() {
                   <span className={cx("text-xs font-semibold", isToday ? "text-brand-700" : "text-ink-500")}>{day}</span>
                   <div className="mt-1 space-y-1">
                     {dayEntries.slice(0, 2).map((entry) => (
-                      <span key={entry.id} className={cx("block truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium", kindStyles[entry.kind])}>
+                      <span
+                        key={entry.id}
+                        role="button"
+                        tabIndex={0}
+                        title={entry.description || entry.title}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setDetalle(entry);
+                        }}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter" || ev.key === " ") {
+                            ev.stopPropagation();
+                            setDetalle(entry);
+                          }
+                        }}
+                        className={cx("block cursor-pointer truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium hover:brightness-95", kindStyles[entry.kind])}
+                      >
                         {entry.title}
                       </span>
                     ))}
@@ -261,12 +287,15 @@ export default function CalendarioPage() {
                     <span className="text-sm font-bold text-ink-900">{formatDay(entry.date)}</span>
                     <span className="text-[9px] font-semibold uppercase text-ink-400">{formatMonthShort(entry.date)}</span>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink-900">{entry.title}</p>
+                  <button onClick={() => setDetalle(entry)} className="min-w-0 flex-1 text-left">
+                    <p className="truncate text-sm font-medium text-ink-900 hover:text-brand-700">{entry.title}</p>
                     <p className="text-xs text-ink-500">
                       {entry.location ?? "—"} {entry.time ? `· ${entry.time}` : ""}
                     </p>
-                  </div>
+                    {entry.description && (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-ink-400">{entry.description}</p>
+                    )}
+                  </button>
                   {isAdmin && (
                     <button
                       onClick={() => removeCalendarEntry(entry.id)}
@@ -283,6 +312,68 @@ export default function CalendarioPage() {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={!!detalle}
+        onClose={() => setDetalle(null)}
+        eyebrow={detalle ? kindLabel[detalle.kind] : "Calendario"}
+        title={detalle?.title ?? ""}
+        size="sm"
+      >
+        {detalle && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-ink-600">
+              <span>
+                <span className="text-ink-400">Fecha: </span>
+                {formatDay(detalle.date)} de {formatMonthShort(detalle.date)}
+              </span>
+              {detalle.time && (
+                <span>
+                  <span className="text-ink-400">Hora: </span>
+                  {detalle.time}
+                </span>
+              )}
+              {detalle.location && (
+                <span>
+                  <span className="text-ink-400">Lugar: </span>
+                  {detalle.location}
+                </span>
+              )}
+            </div>
+
+            {detalle.motto && (
+              <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm italic text-amber-800">“{detalle.motto}”</p>
+            )}
+
+            {detalle.description ? (
+              <div>
+                <p className="label">Descripción</p>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-600">{detalle.description}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-ink-400">Esta fecha no tiene descripción.</p>
+            )}
+
+            <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    if (!window.confirm(`¿Eliminar "${detalle.title}" del calendario?`)) return;
+                    removeCalendarEntry(detalle.id);
+                    setDetalle(null);
+                  }}
+                  className="btn-secondary text-rose-600 hover:bg-rose-50"
+                >
+                  <Trash2 className="h-4 w-4" /> Eliminar
+                </button>
+              )}
+              <button onClick={() => setDetalle(null)} className="btn-primary">
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <NewEntryModal
         open={createOpen}
@@ -313,11 +404,12 @@ function NewEntryModal({
           const form = e.target as HTMLFormElement;
           const data = new FormData(form);
           onSave({
-            date: String(data.get("date") || defaultDate || "2026-08-03"),
+            date: String(data.get("date") || defaultDate || new Date().toISOString().slice(0, 10)),
             title: String(data.get("title") || "Nueva actividad"),
             kind: data.get("kind") as CalendarEntry["kind"],
             location: String(data.get("location") || ""),
             time: String(data.get("time") || ""),
+            description: String(data.get("description") || ""),
           });
           onClose();
         }}
@@ -330,7 +422,7 @@ function NewEntryModal({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">Fecha</label>
-            <input name="date" type="date" className="input" defaultValue={defaultDate ?? "2026-08-03"} />
+            <input name="date" type="date" className="input" defaultValue={defaultDate ?? new Date().toISOString().slice(0, 10)} />
           </div>
           <div>
             <label className="label">Tipo</label>
@@ -353,6 +445,16 @@ function NewEntryModal({
             <label className="label">Hora (opcional)</label>
             <input name="time" className="input" placeholder="Ej. 2:00 p. m." />
           </div>
+        </div>
+        <div>
+          <label className="label">Descripción (opcional)</label>
+          <textarea
+            name="description"
+            rows={5}
+            className="input min-h-[120px] resize-y"
+            placeholder="Explica de qué se trata: objetivo, quiénes participan, qué deben llevar, acuerdos previos..."
+          />
+          <p className="mt-1 text-xs text-ink-400">Escribe todo lo que haga falta, no hay límite de texto.</p>
         </div>
         <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
           <button type="button" onClick={onClose} className="btn-secondary">
