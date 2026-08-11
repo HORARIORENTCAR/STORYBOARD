@@ -152,7 +152,12 @@ export function Topbar() {
           >
             <Bell className="h-[18px] w-[18px]" />
             {unread > 0 && (
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white" />
+              <span
+                aria-label={`${unread} notificaciones sin leer`}
+                className="absolute -right-1.5 -top-1.5 flex h-6 min-w-[24px] items-center justify-center rounded-full bg-rose-600 px-1.5 text-[12px] font-bold leading-none text-white shadow-md ring-2 ring-white"
+              >
+                {unread > 99 ? "99+" : unread}
+              </span>
             )}
           </button>
           {notifOpen && (
