@@ -147,7 +147,7 @@ function mapNotification(r: any, readIds: Set<string>): AppNotification {
   };
 }
 function mapCalendar(r: any): CalendarEntry {
-  return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined, description: r.description ?? undefined, responsibles: r.responsibles ?? undefined };
+  return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined, description: r.description ?? undefined, responsibles: r.responsibles ?? undefined, customKind: r.custom_kind ?? undefined };
 }
 function mapHistory(r: any): HistoryEntry {
   return { id: r.id, userId: r.user_id, action: r.action, detail: r.detail, type: r.type, createdAt: r.created_at };
@@ -795,6 +795,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         motto: entry.motto ?? null,
         description: entry.description ?? null,
         responsibles: entry.responsibles ?? null,
+        custom_kind: entry.customKind ?? null,
       });
       logHistory("agregó al calendario institucional", entry.title, "Calendario");
       // La especificación pide avisar a todo el personal de cualquier cambio del calendario.
@@ -822,6 +823,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (patch.motto !== undefined) dbPatch.motto = patch.motto || null;
       if (patch.description !== undefined) dbPatch.description = patch.description || null;
       if (patch.responsibles !== undefined) dbPatch.responsibles = patch.responsibles || null;
+      if (patch.customKind !== undefined) dbPatch.custom_kind = patch.customKind || null;
       const { error } = await supabase.from("calendar_entries").update(dbPatch).eq("id", id);
       if (error) return;
       setState((prev) => ({

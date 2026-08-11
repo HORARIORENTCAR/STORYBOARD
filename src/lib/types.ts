@@ -100,7 +100,7 @@ export interface CalendarEntry {
   id: string;
   date: string; // yyyy-mm-dd
   title: string;
-  kind: "evento" | "fecha" | "valor" | "reunion" | "capacitacion" | "informe";
+  kind: "evento" | "fecha" | "valor" | "reunion" | "capacitacion" | "informe" | "otro";
   location?: string;
   time?: string;
   /** Lema o nota corta que acompaña la fecha (p. ej. el valor del mes). */
@@ -109,6 +109,8 @@ export interface CalendarEntry {
   description?: string;
   /** Quiénes deben hacerla cumplir. Texto libre: nombres, curso, comisión... */
   responsibles?: string;
+  /** Nombre propio de la categoría cuando el tipo es "otro". */
+  customKind?: string;
 }
 
 export interface AppNotification {

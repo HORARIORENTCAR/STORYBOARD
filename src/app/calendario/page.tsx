@@ -16,7 +16,13 @@ const kindLabel: Record<CalendarEntry["kind"], string> = {
   reunion: "Reunión",
   capacitacion: "Capacitación",
   informe: "Entrega de informes",
+  otro: "Otros",
 };
+
+/** Nombre visible de la categoría: el propio si es "otro", si no el estándar. */
+function nombreTipo(entry: CalendarEntry) {
+  return entry.kind === "otro" && entry.customKind ? entry.customKind : kindLabel[entry.kind];
+}
 
 const kindStyles: Record<CalendarEntry["kind"], string> = {
   evento: "bg-brand-100 text-brand-800",
@@ -25,6 +31,7 @@ const kindStyles: Record<CalendarEntry["kind"], string> = {
   reunion: "bg-rose-100 text-rose-800",
   capacitacion: "bg-violet-100 text-violet-800",
   informe: "bg-ink-100 text-ink-700",
+  otro: "bg-teal-100 text-teal-800",
 };
 
 const WEEKDAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
@@ -244,7 +251,7 @@ export default function CalendarioPage() {
                         key={entry.id}
                         role="button"
                         tabIndex={0}
-                        title={entry.description || entry.title}
+                        title={`${nombreTipo(entry)}: ${entry.title}${entry.description ? " — " + entry.description : ""}`}
                         onClick={(ev) => {
                           ev.stopPropagation();
                           setDetalle(entry);
@@ -371,6 +378,9 @@ export default function CalendarioPage() {
                   </div>
                   <button onClick={() => setDetalle(entry)} className="min-w-0 flex-1 text-left">
                     <p className="truncate text-sm font-medium text-ink-900 hover:text-brand-700">{entry.title}</p>
+                    <span className={cx("mt-0.5 inline-block rounded-md px-1.5 py-0.5 text-[10px] font-medium", kindStyles[entry.kind])}>
+                      {nombreTipo(entry)}
+                    </span>
                     <p className="text-xs text-ink-500">
                       {entry.location ?? "—"} {entry.time ? `· ${entry.time}` : ""}
                     </p>
@@ -401,7 +411,7 @@ export default function CalendarioPage() {
       <Modal
         open={!!detalle}
         onClose={() => setDetalle(null)}
-        eyebrow={detalle ? kindLabel[detalle.kind] : "Calendario"}
+        eyebrow={detalle ? nombreTipo(detalle) : "Calendario"}
         title={detalle?.title ?? ""}
         size="sm"
       >
@@ -488,6 +498,7 @@ function NewEntryModal({
   defaultDate: string | null;
   onSave: (entry: Omit<CalendarEntry, "id">) => void;
 }) {
+  const [tipo, setTipo] = useState<CalendarEntry["kind"]>("fecha");
   return (
     <Modal open={open} onClose={onClose} eyebrow="Calendario institucional" title="Nueva fecha" size="sm">
       <form
@@ -503,7 +514,9 @@ function NewEntryModal({
             time: String(data.get("time") || ""),
             description: String(data.get("description") || ""),
             responsibles: String(data.get("responsibles") || ""),
+            customKind: String(data.get("customKind") || ""),
           });
+          setTipo("fecha");
           onClose();
         }}
         className="space-y-4"
@@ -519,16 +532,35 @@ function NewEntryModal({
           </div>
           <div>
             <label className="label">Tipo</label>
-            <select name="kind" className="input" defaultValue="fecha">
+            <select
+              name="kind"
+              className="input"
+              value={tipo}
+              onChange={(e) => setTipo(e.target.value as CalendarEntry["kind"])}
+            >
               <option value="evento">Evento</option>
               <option value="fecha">Fecha importante</option>
               <option value="valor">Valor del mes</option>
               <option value="reunion">Reunión</option>
               <option value="capacitacion">Capacitación</option>
               <option value="informe">Entrega de informes</option>
+              <option value="otro">Otros...</option>
             </select>
           </div>
         </div>
+        {tipo === "otro" && (
+          <div>
+            <label className="label">Nombre de la categoría</label>
+            <input
+              name="customKind"
+              className="input"
+              placeholder="Ej. Retiro espiritual, Jornada deportiva, Visita pedagógica..."
+              required
+            />
+            <p className="mt-1 text-xs text-ink-400">Así aparecerá etiquetada esta actividad en el calendario.</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">Lugar (opcional)</label>
