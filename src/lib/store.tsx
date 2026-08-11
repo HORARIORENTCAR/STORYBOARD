@@ -207,6 +207,7 @@ interface AppContextValue extends StoredState {
   addEvidence: (taskId: string, file: File) => Promise<string | void>;
   removeEvidence: (taskId: string, itemId: string) => Promise<string | void>;
   addCalendarEntry: (entry: Omit<CalendarEntry, "id">) => Promise<void>;
+  updateCalendarEntry: (id: string, patch: Partial<Omit<CalendarEntry, "id">>) => Promise<void>;
   removeCalendarEntry: (id: string) => Promise<void>;
   updateSettings: (patch: Partial<InstitutionSettings>) => Promise<void>;
   addUser: (data: { name: string; email: string; role: "admin" | "member"; title?: string; area?: string }) => Promise<string | void>;
@@ -809,6 +810,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [logHistory, notify, currentUser]
   );
 
+  const updateCalendarEntry: AppContextValue["updateCalendarEntry"] = useCallback(
+    async (id, patch) => {
+      if (!supabase) return;
+      const dbPatch: Record<string, unknown> = {};
+      if (patch.date !== undefined) dbPatch.date = patch.date;
+      if (patch.title !== undefined) dbPatch.title = patch.title;
+      if (patch.kind !== undefined) dbPatch.kind = patch.kind;
+      if (patch.location !== undefined) dbPatch.location = patch.location || null;
+      if (patch.time !== undefined) dbPatch.time = patch.time || null;
+      if (patch.motto !== undefined) dbPatch.motto = patch.motto || null;
+      if (patch.description !== undefined) dbPatch.description = patch.description || null;
+      if (patch.responsibles !== undefined) dbPatch.responsibles = patch.responsibles || null;
+      const { error } = await supabase.from("calendar_entries").update(dbPatch).eq("id", id);
+      if (error) return;
+      setState((prev) => ({
+        ...prev,
+        calendar: prev.calendar.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      }));
+      const entry = stateRef.current.calendar.find((c) => c.id === id);
+      logHistory("actualizó el calendario institucional", patch.title ?? entry?.title ?? "", "Calendario");
+      await notify(
+        "Calendario institucional actualizado",
+        `${currentUser?.name ?? "Alguien"} modificó "${patch.title ?? entry?.title ?? ""}"`,
+        "all"
+      );
+    },
+    [logHistory, notify, currentUser]
+  );
+
   const removeCalendarEntry: AppContextValue["removeCalendarEntry"] = useCallback(
     async (id) => {
       if (!supabase) return;
@@ -1074,6 +1104,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addEvidence,
     removeEvidence,
     addCalendarEntry,
+    updateCalendarEntry,
     removeCalendarEntry,
     updateSettings,
     addUser,

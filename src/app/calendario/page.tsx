@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Download, Sprout, Trash2, Upload, FileText, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Download, Sprout, Trash2, Upload, FileText, X, Pencil } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { useApp } from "@/lib/store";
@@ -40,11 +40,14 @@ function buildMonthGrid(year: number, month: number) {
 }
 
 export default function CalendarioPage() {
-  const { calendar, addCalendarEntry, removeCalendarEntry, isAdmin, settings, updateSettings, uploadFile } = useApp();
+  const { calendar, addCalendarEntry, removeCalendarEntry, isAdmin, settings, updateSettings, uploadFile, updateCalendarEntry } = useApp();
   const ahora = new Date();
   const [cursor, setCursor] = useState(new Date(ahora.getFullYear(), ahora.getMonth(), 1));
   const [createOpen, setCreateOpen] = useState(false);
   const [detalle, setDetalle] = useState<CalendarEntry | null>(null);
+  const [editandoValor, setEditandoValor] = useState(false);
+  const [valorTitulo, setValorTitulo] = useState("");
+  const [valorLema, setValorLema] = useState("");
   const [subiendoOficial, setSubiendoOficial] = useState(false);
   const [avisoOficial, setAvisoOficial] = useState("");
   const oficialRef = useRef<HTMLInputElement>(null);
@@ -77,7 +80,8 @@ export default function CalendarioPage() {
     [calendar]
   );
 
-  const valorDelMes = calendar.find((c) => c.kind === "valor" && new Date(c.date).getMonth() === month);
+  const prefijoMes = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const valorDelMes = calendar.find((c) => c.kind === "valor" && c.date.startsWith(prefijoMes));
 
   /** Descarga el calendario institucional como archivo CSV (se abre en Excel). */
   function exportarCalendario() {
@@ -265,18 +269,96 @@ export default function CalendarioPage() {
         </div>
 
         <div className="space-y-5">
-          {valorDelMes && (
-            <div className="card p-5 text-center">
-              <p className="section-eyebrow">Valor del mes</p>
-              <div className="my-3 flex justify-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100">
-                  <Sprout className="h-6 w-6 text-brand-700" />
-                </div>
+          <div className="card p-5 text-center">
+            <p className="section-eyebrow">Valor del mes</p>
+            <div className="my-3 flex justify-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-100">
+                <Sprout className="h-6 w-6 text-brand-700" />
               </div>
-              <h3 className="text-lg font-bold text-ink-900">{valorDelMes.title}</h3>
-              <p className="mt-1 text-sm italic text-ink-500">&ldquo;Cumplimos con alegría aquello que nos corresponde.&rdquo;</p>
             </div>
-          )}
+
+            {editandoValor ? (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const titulo = valorTitulo.trim();
+                  if (!titulo) return;
+                  if (valorDelMes) {
+                    await updateCalendarEntry(valorDelMes.id, { title: titulo, motto: valorLema.trim() });
+                  } else {
+                    await addCalendarEntry({
+                      date: `${year}-${String(month + 1).padStart(2, "0")}-01`,
+                      title: titulo,
+                      kind: "valor",
+                      motto: valorLema.trim(),
+                    });
+                  }
+                  setEditandoValor(false);
+                }}
+                className="space-y-2 text-left"
+              >
+                <input
+                  className="input !text-center"
+                  placeholder="Ej. Valor del mes: la Responsabilidad"
+                  value={valorTitulo}
+                  onChange={(e) => setValorTitulo(e.target.value)}
+                  autoFocus
+                  required
+                />
+                <textarea
+                  className="input min-h-[70px] resize-y !text-center !text-sm"
+                  placeholder="Frase o lema del mes (opcional)"
+                  value={valorLema}
+                  onChange={(e) => setValorLema(e.target.value)}
+                />
+                <div className="flex justify-center gap-2 pt-1">
+                  <button type="button" onClick={() => setEditandoValor(false)} className="btn-secondary !py-1.5 !text-xs">
+                    Cancelar
+                  </button>
+                  <button type="submit" className="btn-primary !py-1.5 !text-xs">
+                    Guardar
+                  </button>
+                </div>
+              </form>
+            ) : valorDelMes ? (
+              <>
+                <h3 className="text-lg font-bold text-ink-900">{valorDelMes.title}</h3>
+                {valorDelMes.motto && (
+                  <p className="mt-1 text-sm italic text-ink-500">&ldquo;{valorDelMes.motto}&rdquo;</p>
+                )}
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setValorTitulo(valorDelMes.title);
+                      setValorLema(valorDelMes.motto ?? "");
+                      setEditandoValor(true);
+                    }}
+                    className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-brand-700 hover:underline"
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Cambiar el valor de este mes
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-ink-400">
+                  Aún no se ha definido el valor de {formatMonthShort(`${year}-${String(month + 1).padStart(2, "0")}-01`)}.
+                </p>
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setValorTitulo("");
+                      setValorLema("");
+                      setEditandoValor(true);
+                    }}
+                    className="btn-secondary mt-3 !py-1.5 !text-xs"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Definir el valor del mes
+                  </button>
+                )}
+              </>
+            )}
+          </div>
 
           <div className="card p-5">
             <p className="mb-3 text-sm font-bold text-ink-900">Próximas fechas</p>
