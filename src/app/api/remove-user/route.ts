@@ -24,7 +24,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Solo un administrador puede eliminar personas." }, { status: 403 });
     }
 
-    // Nunca dejar la institución sin administradores.
     const { data: target } = await admin.from("profiles").select("role, name").eq("id", userId).single();
     if (!target) {
       return NextResponse.json({ error: "Esa persona ya no existe." }, { status: 404 });
@@ -36,22 +35,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Sus eventos pasan a quien ejecuta la acción, para no perder el historial.
-    await admin.from("events").update({ created_by: requesterId }).eq("created_by", userId);
+    /* Limpiamos todo lo que la persona deja atrás: sus eventos pasan a quien
+       ejecuta la acción, se liberan sus lugares en las tareas, sale de las
+       listas de espera y de las notificaciones dirigidas. Después se borra
+       la ficha. Los mensajes y el historial se conservan, sin autor. */
+    const { error: limpiezaErr } = await admin.rpc("eliminar_persona", {
+      p_user_id: userId,
+      p_solicitante: requesterId,
+    });
 
-    /* Primero la cuenta de acceso. Si esto falla y borráramos la ficha antes,
-       quedaría un correo ocupado que no aparece en ninguna lista. */
-    const { error: authErr } = await admin.auth.admin.deleteUser(userId);
-    if (authErr && !authErr.message.toLowerCase().includes("not found")) {
+    if (limpiezaErr) {
+      // Si aún no se ha corrido el SQL de arreglo, lo decimos con claridad.
+      const falta = limpiezaErr.message.toLowerCase().includes("does not exist");
       return NextResponse.json(
-        { error: `No se pudo eliminar la cuenta de acceso: ${authErr.message}` },
+        {
+          error: falta
+            ? "Falta aplicar el SQL 'ARREGLO-BORRAR-PERSONAS' en Supabase."
+            : limpiezaErr.message,
+        },
         { status: 400 }
       );
     }
 
-    const { error: perfilErr } = await admin.from("profiles").delete().eq("id", userId);
-    if (perfilErr) {
-      return NextResponse.json({ error: perfilErr.message }, { status: 400 });
+    // Por último la cuenta de acceso, para que el correo quede libre.
+    const { error: authErr } = await admin.auth.admin.deleteUser(userId);
+    if (authErr && !authErr.message.toLowerCase().includes("not found")) {
+      return NextResponse.json(
+        { error: `Se quitó del equipo, pero su cuenta de acceso sigue activa: ${authErr.message}` },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({ ok: true });

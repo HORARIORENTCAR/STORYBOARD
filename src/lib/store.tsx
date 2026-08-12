@@ -113,7 +113,7 @@ function mapEvent(r: any, taskIds: string[]): SchoolEvent {
 function mapChat(r: any): ChatMessage {
   return {
     id: r.id,
-    authorId: r.author_id,
+    authorId: r.author_id ?? "",
     text: r.text,
     createdAt: r.created_at,
     reactions: r.reactions ?? {},
@@ -222,6 +222,8 @@ interface AppContextValue extends StoredState {
   resetUserPassword: (id: string) => Promise<{ error?: string; credenciales?: Credenciales }>;
   updateUserRole: (id: string, role: "admin" | "member") => Promise<string | void>;
   updateProfile: (patch: { name?: string; title?: string; area?: string }) => Promise<void>;
+  /** Un administrador corrige los datos de cualquier persona del equipo. */
+  updateUserInfo: (id: string, patch: { name?: string; title?: string; area?: string }) => Promise<string | void>;
   removeUser: (id: string) => Promise<string | void>;
   resendInvite: (email: string) => Promise<string | void>;
   searchAll: (q: string) => { events: SchoolEvent[]; tasks: EventTask[]; people: StaffUser[] };
@@ -937,6 +939,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
    *  - Nadie puede quitarse a sí mismo el rol de administrador (evita quedarse fuera).
    *  - La institución nunca puede quedarse sin ningún administrador.
    */
+  const updateUserInfo: AppContextValue["updateUserInfo"] = useCallback(
+    async (id, patch) => {
+      if (!supabase) return "Supabase no está configurado";
+      const dbPatch: Record<string, unknown> = {};
+      if (patch.name !== undefined) {
+        dbPatch.name = patch.name;
+        dbPatch.initials = patch.name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
+      }
+      if (patch.title !== undefined) dbPatch.title = patch.title || null;
+      if (patch.area !== undefined) dbPatch.area = patch.area || null;
+      const { error } = await supabase.from("profiles").update(dbPatch).eq("id", id);
+      if (error) return error.message;
+      setState((prev) => ({ ...prev, users: prev.users.map((u) => (u.id === id ? { ...u, ...patch } : u)) }));
+      logHistory("actualizó los datos de", patch.name ?? "", "Equipo");
+    },
+    [logHistory]
+  );
+
   const updateUserRole: AppContextValue["updateUserRole"] = useCallback(async (id, role) => {
     if (!supabase) return "Supabase no está configurado";
     const prev = stateRef.current;
@@ -1159,6 +1179,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addUser,
     resetUserPassword,
     updateUserRole,
+    updateUserInfo,
     updateProfile,
     removeUser,
     resendInvite,

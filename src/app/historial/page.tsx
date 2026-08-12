@@ -35,7 +35,7 @@ export default function HistorialPage() {
   function exportCsv() {
     const rows = [
       ["Persona", "Acción", "Detalle", "Tipo", "Fecha"],
-      ...filtered.map((h) => [userById(h.userId)?.name ?? "", h.action, h.detail, h.type, h.createdAt]),
+      ...filtered.map((h) => [(userById(h.userId)?.name ?? "Usuario eliminado") ?? "", h.action, h.detail, h.type, h.createdAt]),
     ];
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });

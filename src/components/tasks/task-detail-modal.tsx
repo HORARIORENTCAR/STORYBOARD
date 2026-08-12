@@ -387,13 +387,14 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             )}
             {task.chat.map((m) => {
               const author = userById(m.authorId);
+              const nombreAutor = author?.name ?? "Usuario eliminado";
               const mine = m.authorId === currentUser?.id;
               return (
                 <div key={m.id} className={cx("flex gap-2.5", mine && "flex-row-reverse")}>
-                  <Avatar name={author?.name ?? "?"} color={author?.color} size="sm" />
+                  <Avatar name={nombreAutor} color={author?.color} size="sm" />
                   <div className={cx("max-w-[75%]", mine && "items-end text-right")}>
                     <div className={cx("rounded-2xl px-3.5 py-2.5 text-sm", mine ? "bg-brand-700 text-white" : "bg-ink-100 text-ink-800")}>
-                      {!mine && <p className="mb-0.5 text-xs font-semibold text-brand-700">{author?.name}</p>}
+                      {!mine && <p className="mb-0.5 text-xs font-semibold text-brand-700">{nombreAutor}</p>}
                       {m.text}
 
                       {(m.attachments ?? []).length > 0 && (

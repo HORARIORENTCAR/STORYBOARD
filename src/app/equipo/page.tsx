@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, UserPlus, ShieldCheck, MoreHorizontal, KeyRound, Trash2, X, Copy } from "lucide-react";
+import { Search, UserPlus, ShieldCheck, MoreHorizontal, KeyRound, Trash2, X, Copy, Download, Pencil, ListChecks, Check } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { Credenciales, useApp } from "@/lib/store";
@@ -11,7 +11,7 @@ import { correoPermitido, cx, textoDominios } from "@/lib/utils";
 import { Role } from "@/lib/types";
 
 export default function EquipoPage() {
-  const { users, addUser, updateUserRole, settings, currentUser, removeUser, resetUserPassword } = useApp();
+  const { users, addUser, updateUserRole, updateUserInfo, settings, currentUser, removeUser, resetUserPassword, liveTasks } = useApp();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -19,10 +19,66 @@ export default function EquipoPage() {
   const [credenciales, setCredenciales] = useState<Credenciales | null>(null);
   const [copiado, setCopiado] = useState(false);
 
-  const filtered = useMemo(
-    () => users.filter((u) => `${u.name} ${u.email} ${u.title ?? ""}`.toLowerCase().includes(query.toLowerCase())),
-    [users, query]
+  const [filtroRol, setFiltroRol] = useState<"todos" | Role>("todos");
+  const [filtroArea, setFiltroArea] = useState("todas");
+  const [filtroEstado, setFiltroEstado] = useState<"todos" | "active" | "invited">("todos");
+  const [editando, setEditando] = useState<string | null>(null);
+  const [edit, setEdit] = useState({ name: "", title: "", area: "" });
+
+  const areas = useMemo(
+    () => Array.from(new Set(users.map((u) => u.area).filter(Boolean))).sort() as string[],
+    [users]
   );
+
+  /** Cuántas tareas activas lleva cada persona ahora mismo. */
+  const cargaPorPersona = useMemo(() => {
+    const mapa = new Map<string, number>();
+    liveTasks
+      .filter((t) => t.status !== "terminada")
+      .forEach((t) => {
+        t.slots.forEach((sl) => {
+          if (sl.userId) mapa.set(sl.userId, (mapa.get(sl.userId) ?? 0) + 1);
+        });
+      });
+    return mapa;
+  }, [liveTasks]);
+
+  const filtered = useMemo(
+    () =>
+      users
+        .filter((u) => `${u.name} ${u.email} ${u.title ?? ""} ${u.area ?? ""}`.toLowerCase().includes(query.toLowerCase()))
+        .filter((u) => filtroRol === "todos" || u.role === filtroRol)
+        .filter((u) => filtroArea === "todas" || u.area === filtroArea)
+        .filter((u) => filtroEstado === "todos" || u.status === filtroEstado)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [users, query, filtroRol, filtroArea, filtroEstado]
+  );
+
+  function exportarCsv() {
+    const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [
+      ["Nombre", "Correo", "Rol", "Cargo", "Área", "Estado", "Tareas activas", "Desde"].join(","),
+      ...filtered.map((u) =>
+        [
+          u.name,
+          u.email,
+          u.role === "admin" ? "Administrador" : "Miembro",
+          u.title ?? "",
+          u.area ?? "",
+          u.status === "active" ? "Activa" : "Invitada",
+          String(cargaPorPersona.get(u.id) ?? 0),
+          u.joinedAt,
+        ].map(esc).join(",")
+      ),
+    ].join("\n");
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `equipo-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const admins = users.filter((u) => u.role === "admin").length;
   const active = users.filter((u) => u.status === "active").length;
@@ -116,26 +172,126 @@ export default function EquipoPage() {
         </div>
       )}
 
-      <div className="mb-4 relative max-w-md">
-        <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-        <input className="input pl-10" placeholder="Buscar por nombre, correo, cargo o área..." value={query} onChange={(e) => setQuery(e.target.value)} />
+      <div className="card mb-5 flex flex-wrap items-end gap-3 p-4">
+        <div className="relative min-w-[220px] flex-1">
+          <span className="mb-1 block text-xs font-medium text-ink-500">Buscar</span>
+          <Search className="pointer-events-none absolute left-3.5 top-[34px] h-4 w-4 text-ink-400" />
+          <input
+            className="input pl-10 !py-1.5 !text-sm"
+            placeholder="Nombre, correo, cargo o área..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+
+        <label className="min-w-[130px]">
+          <span className="mb-1 block text-xs font-medium text-ink-500">Rol</span>
+          <select className="input !py-1.5 !text-sm" value={filtroRol} onChange={(e) => setFiltroRol(e.target.value as typeof filtroRol)}>
+            <option value="todos">Todos</option>
+            <option value="admin">Administradores</option>
+            <option value="member">Miembros</option>
+          </select>
+        </label>
+
+        <label className="min-w-[130px]">
+          <span className="mb-1 block text-xs font-medium text-ink-500">Área</span>
+          <select className="input !py-1.5 !text-sm" value={filtroArea} onChange={(e) => setFiltroArea(e.target.value)}>
+            <option value="todas">Todas</option>
+            {areas.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="min-w-[130px]">
+          <span className="mb-1 block text-xs font-medium text-ink-500">Estado</span>
+          <select className="input !py-1.5 !text-sm" value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value as typeof filtroEstado)}>
+            <option value="todos">Todos</option>
+            <option value="active">Cuentas activas</option>
+            <option value="invited">Invitadas</option>
+          </select>
+        </label>
+
+        <button onClick={exportarCsv} className="btn-secondary self-center !py-1.5 !text-xs">
+          <Download className="h-3.5 w-3.5" /> Exportar
+        </button>
+
+        <span className="self-center text-xs text-ink-400">
+          {filtered.length} de {users.length}
+        </span>
       </div>
 
       <div className="card divide-y divide-ink-100">
+        {filtered.length === 0 && (
+          <p className="px-5 py-10 text-center text-sm text-ink-400">
+            Nadie coincide con la búsqueda o los filtros aplicados.
+          </p>
+        )}
         {filtered.map((u) => (
           <div key={u.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-[260px] flex-1 items-center gap-3">
               <Avatar name={u.name} color={u.color} />
-              <div>
-                <p className="flex items-center gap-2 text-sm font-semibold text-ink-900">
-                  {u.name}
-                  {u.id === currentUser?.id && <span className="badge bg-ink-100 text-ink-500">Tu cuenta</span>}
-                </p>
-                <p className="text-xs text-ink-500">{u.email}</p>
-                <p className="text-xs text-ink-400">
-                  {u.title ?? "Colaborador"} {u.area ? `· ${u.area}` : ""}
-                </p>
-              </div>
+              {editando === u.id ? (
+                <form
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const err = await updateUserInfo(u.id, {
+                      name: edit.name.trim() || u.name,
+                      title: edit.title.trim(),
+                      area: edit.area.trim(),
+                    });
+                    if (err) setNotice(err);
+                    setEditando(null);
+                  }}
+                  className="flex flex-1 flex-wrap items-center gap-2"
+                >
+                  <input
+                    className="input !w-40 !py-1 !text-sm"
+                    value={edit.name}
+                    onChange={(e) => setEdit({ ...edit, name: e.target.value })}
+                    placeholder="Nombre"
+                  />
+                  <input
+                    className="input !w-44 !py-1 !text-sm"
+                    value={edit.title}
+                    onChange={(e) => setEdit({ ...edit, title: e.target.value })}
+                    placeholder="Cargo"
+                  />
+                  <input
+                    className="input !w-36 !py-1 !text-sm"
+                    value={edit.area}
+                    onChange={(e) => setEdit({ ...edit, area: e.target.value })}
+                    placeholder="Área"
+                  />
+                  <button type="submit" className="btn-primary !px-2.5 !py-1 !text-xs" title="Guardar">
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                  <button type="button" onClick={() => setEditando(null)} className="btn-secondary !px-2.5 !py-1 !text-xs">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </form>
+              ) : (
+                <div className="min-w-0">
+                  <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-900">
+                    {u.name}
+                    {u.id === currentUser?.id && <span className="badge bg-ink-100 text-ink-500">Tu cuenta</span>}
+                    <button
+                      onClick={() => {
+                        setEdit({ name: u.name, title: u.title ?? "", area: u.area ?? "" });
+                        setEditando(u.id);
+                      }}
+                      title="Editar nombre, cargo y área"
+                      className="text-ink-300 hover:text-brand-700"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  </p>
+                  <p className="truncate text-xs text-ink-500">{u.email}</p>
+                  <p className="truncate text-xs text-ink-400">
+                    {u.title ?? "Colaborador"} {u.area ? `· ${u.area}` : ""}
+                  </p>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <select
@@ -160,7 +316,25 @@ export default function EquipoPage() {
                 <option value="admin">Administrador</option>
                 <option value="member">Miembro</option>
               </select>
-              <span className="badge bg-brand-100 text-brand-800">
+              <span
+                title="Tareas activas asignadas"
+                className={cx(
+                  "badge",
+                  (cargaPorPersona.get(u.id) ?? 0) === 0
+                    ? "bg-ink-100 text-ink-500"
+                    : (cargaPorPersona.get(u.id) ?? 0) >= 4
+                    ? "bg-amber-100 text-amber-800"
+                    : "bg-sky-100 text-sky-800"
+                )}
+              >
+                <ListChecks className="h-3 w-3" /> {cargaPorPersona.get(u.id) ?? 0} tareas
+              </span>
+              <span
+                className={cx(
+                  "badge",
+                  u.status === "active" ? "bg-brand-100 text-brand-800" : "bg-amber-100 text-amber-800"
+                )}
+              >
                 <ShieldCheck className="h-3 w-3" /> {u.status === "active" ? "Activa" : "Invitada"}
               </span>
               <span className="text-xs text-ink-400">{u.joinedAt}</span>
