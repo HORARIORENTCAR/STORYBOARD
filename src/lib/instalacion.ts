@@ -7,7 +7,7 @@
 /* Marca de esta versión del código. Sirve para saber, de un vistazo, si lo que
    está publicado en internet es realmente lo último que subimos a GitHub.
    Si la página /instalar no muestra exactamente esta marca, el despliegue no llegó. */
-export const VERSION_APP = "2026.08.12-deteccion";
+export const VERSION_APP = "2026.08.12-manifiesto";
 
 export type EventoInstalacion = Event & {
   prompt: () => Promise<void>;
@@ -171,8 +171,24 @@ export type Revision = {
 
 async function revisarManifiesto(): Promise<Revision[]> {
   const out: Revision[] = [];
-  const etiqueta = document.querySelector('link[rel="manifest"]');
-  if (!etiqueta) {
+  /* Este control tenía un punto ciego grave: buscaba el enlace en TODO el
+     documento. Chrome solo lo acepta si está dentro de <head>. Si por lo que sea
+     acaba en el <body>, el navegador ignora el manifiesto y la app deja de poder
+     instalarse, pero el diagnóstico decía que todo estaba bien. Ahora miramos el
+     head, y de paso avisamos si hay más de uno. */
+  const enHead = document.head.querySelectorAll('link[rel="manifest"]');
+  const enTodo = document.querySelectorAll('link[rel="manifest"]');
+
+  if (enHead.length === 0 && enTodo.length > 0) {
+    out.push({
+      nombre: "Enlace al manifiesto",
+      estado: "mal",
+      detalle:
+        "El enlace existe pero está FUERA del <head>. Chrome lo ignora en esa posición, y por eso no ofrece instalar.",
+    });
+    return out;
+  }
+  if (enHead.length === 0) {
     out.push({
       nombre: "Enlace al manifiesto",
       estado: "mal",
@@ -180,7 +196,15 @@ async function revisarManifiesto(): Promise<Revision[]> {
     });
     return out;
   }
-  out.push({ nombre: "Enlace al manifiesto", estado: "bien", detalle: "Declarado en la página." });
+  if (enHead.length > 1) {
+    out.push({
+      nombre: "Enlace al manifiesto",
+      estado: "aviso",
+      detalle: `Hay ${enHead.length} enlaces al manifiesto en el head. Debería haber uno solo.`,
+    });
+  } else {
+    out.push({ nombre: "Enlace al manifiesto", estado: "bien", detalle: "Uno solo, y dentro del head." });
+  }
 
   let datos: Record<string, unknown> | null = null;
   try {

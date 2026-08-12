@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { AppProviders } from "@/components/providers/app-providers";
 import { PwaSetup } from "@/components/pwa/pwa-setup";
@@ -15,8 +16,7 @@ export const metadata: Metadata = {
     capable: true,
     title: "Staff Board",
     // "default" deja la barra de estado del iPhone visible y con el contenido
-    // debajo. Con "black-translucent" el encabezado quedaba tapado por el reloj
-    // y la app instalada parecía rota.
+    // debajo. Con "black-translucent" el encabezado quedaba tapado por el reloj.
     statusBarStyle: "default",
   },
   icons: {
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: "/apple-touch-icon.png",
   },
   formatDetection: { telephone: false },
 };
@@ -37,12 +37,15 @@ export const viewport: Viewport = {
   themeColor: "#0d1712",
 };
 
-/* Chrome dispara `beforeinstallprompt` en cuanto la página cumple los requisitos
-   de instalación, y eso ocurre normalmente ANTES de que React termine de montar.
-   Si nadie lo escucha en ese instante, el evento se pierde para siempre y el
-   botón "Instalar" nunca aparece: esa era la razón por la que no se podía
-   instalar la app. Este script corre en el `head`, antes que todo lo demás,
-   guarda el evento en `window` y avisa a la app cuando ya esté lista. */
+/* Chrome dispara `beforeinstallprompt` antes de que React monte, así que hay
+   que escucharlo lo más temprano posible.
+
+   MUY IMPORTANTE: esto va con <Script strategy="beforeInteractive"/>, NUNCA
+   dentro de una etiqueta <head> escrita a mano. En el App Router de Next,
+   escribir <head> a mano compite con el sistema de metadatos y puede acabar
+   sacando el <link rel="manifest"> fuera del head. Si eso pasa, Chrome ignora
+   el manifiesto por completo y la aplicación deja de poder instalarse, sin dar
+   ningún error. Next inyecta este script en el head por su cuenta. */
 const CAPTURA_INSTALACION = `
 (function () {
   window.__sbInstall = window.__sbInstall || null;
@@ -64,10 +67,12 @@ const CAPTURA_INSTALACION = `
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es" className={inter.variable}>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: CAPTURA_INSTALACION }} />
-      </head>
       <body className="font-sans antialiased">
+        <Script
+          id="captura-instalacion"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: CAPTURA_INSTALACION }}
+        />
         <AppProviders>{children}</AppProviders>
         <PwaSetup />
       </body>
