@@ -39,8 +39,20 @@ export async function POST(req: NextRequest) {
     // Sus eventos pasan a quien ejecuta la acción, para no perder el historial.
     await admin.from("events").update({ created_by: requesterId }).eq("created_by", userId);
 
-    await admin.from("profiles").delete().eq("id", userId);
-    await admin.auth.admin.deleteUser(userId);
+    /* Primero la cuenta de acceso. Si esto falla y borráramos la ficha antes,
+       quedaría un correo ocupado que no aparece en ninguna lista. */
+    const { error: authErr } = await admin.auth.admin.deleteUser(userId);
+    if (authErr && !authErr.message.toLowerCase().includes("not found")) {
+      return NextResponse.json(
+        { error: `No se pudo eliminar la cuenta de acceso: ${authErr.message}` },
+        { status: 400 }
+      );
+    }
+
+    const { error: perfilErr } = await admin.from("profiles").delete().eq("id", userId);
+    if (perfilErr) {
+      return NextResponse.json({ error: perfilErr.message }, { status: 400 });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e) {

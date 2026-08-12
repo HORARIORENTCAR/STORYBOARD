@@ -8,6 +8,21 @@ import { generarPassword } from "@/lib/password";
  * Staff Board y la devuelve para que el administrador se la entregue.
  * No depende de que llegue ningún correo.
  */
+/** Busca una cuenta de acceso por correo recorriendo el listado de Supabase. */
+async function buscarUsuarioPorCorreo(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  correo: string
+): Promise<{ id: string } | null> {
+  for (let page = 1; page <= 20; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
+    if (error || !data?.users?.length) return null;
+    const hallado = data.users.find((u) => (u.email ?? "").toLowerCase() === correo);
+    if (hallado) return { id: hallado.id };
+    if (data.users.length < 200) return null;
+  }
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { name, email, role, title, area, requesterId } = await req.json();
@@ -44,16 +59,50 @@ export async function POST(req: NextRequest) {
 
     // 3. Crear la cuenta ya lista para usarse, con contraseña propia de Staff Board.
     const password = generarPassword();
+    let userId: string | null = null;
+
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email: correo,
       password,
       email_confirm: true,
     });
-    if (createErr || !created?.user) {
-      const msg = (createErr?.message ?? "").toLowerCase().includes("already")
-        ? "Ya existe una cuenta con ese correo."
-        : createErr?.message ?? "No se pudo crear la cuenta.";
-      return NextResponse.json({ error: msg }, { status: 400 });
+
+    if (created?.user) {
+      userId = created.user.id;
+    } else {
+      const yaExiste = (createErr?.message ?? "").toLowerCase().includes("already");
+      if (!yaExiste) {
+        return NextResponse.json({ error: createErr?.message ?? "No se pudo crear la cuenta." }, { status: 400 });
+      }
+
+      /* El correo ya tiene cuenta de acceso. Puede ser un duplicado real, o una
+         cuenta huérfana que quedó de un borrado incompleto. Lo averiguamos. */
+      const existente = await buscarUsuarioPorCorreo(admin, correo);
+      if (!existente) {
+        return NextResponse.json(
+          { error: "Ese correo ya está registrado y no se pudo recuperar. Bórralo desde Supabase e inténtalo de nuevo." },
+          { status: 400 }
+        );
+      }
+
+      const { data: fichaExistente } = await admin.from("profiles").select("id").eq("id", existente.id).maybeSingle();
+      if (fichaExistente) {
+        return NextResponse.json({ error: "Ya existe una cuenta activa con ese correo." }, { status: 400 });
+      }
+
+      // Cuenta huérfana: la reutilizamos con la contraseña nueva.
+      const { error: updErr } = await admin.auth.admin.updateUserById(existente.id, {
+        password,
+        email_confirm: true,
+      });
+      if (updErr) {
+        return NextResponse.json({ error: updErr.message }, { status: 400 });
+      }
+      userId = existente.id;
+    }
+
+    if (!userId) {
+      return NextResponse.json({ error: "No se pudo crear la cuenta." }, { status: 400 });
     }
 
     // 4. Crear su ficha en el directorio del personal.
@@ -64,7 +113,7 @@ export async function POST(req: NextRequest) {
       .join("")
       .toUpperCase();
     const { error: profileErr } = await admin.from("profiles").insert({
-      id: created.user.id,
+      id: userId,
       name,
       email: correo,
       role: role ?? "member",
@@ -76,11 +125,11 @@ export async function POST(req: NextRequest) {
     });
     if (profileErr) {
       // Si la ficha falla, no dejamos una cuenta huérfana.
-      await admin.auth.admin.deleteUser(created.user.id);
+      await admin.auth.admin.deleteUser(userId);
       return NextResponse.json({ error: profileErr.message }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true, userId: created.user.id, email: correo, password });
+    return NextResponse.json({ ok: true, userId, email: correo, password });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Error inesperado" }, { status: 500 });
   }
