@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Sparkles, ShieldCheck, ArrowRight } from "lucide-react";
+import { Sparkles, ShieldCheck, ArrowRight, Smartphone } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { isSupabaseConfigured } from "@/lib/supabase";
 
@@ -124,6 +125,22 @@ export default function LoginPage() {
               Pídele a un administrador que te invite desde la sección Equipo.
             </p>
           </form>
+
+          <div className="mt-6 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3">
+            <Link href="/instalar" className="flex items-center gap-3 group">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-brand-700">
+                <Smartphone className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-brand-900 group-hover:underline">
+                  Instala la app en tu celular o computadora
+                </p>
+                <p className="text-xs text-brand-800">
+                  Te mostramos los pasos exactos para tu equipo. No hace falta Google Play ni App Store.
+                </p>
+              </div>
+            </Link>
+          </div>
         </div>
       </div>
     </div>

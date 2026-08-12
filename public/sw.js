@@ -1,22 +1,27 @@
 /* Service worker de Staff Board.
-   v3 — Estrategia corregida: la RED manda siempre que haya conexión.
-   El problema de la v1 era que el código de la app (JS/CSS) se servía desde
-   la caché para siempre, así que las correcciones publicadas nunca llegaban
-   al usuario. Ahora la caché solo sirve como respaldo cuando no hay internet. */
-const CACHE = "staff-board-v3";
-const ESENCIALES = ["/", "/manifest.json"];
+   v4 — La RED manda siempre que haya conexión; la caché es solo respaldo.
+   Además guardamos /instalar y /login para que la guía de instalación se pueda
+   abrir aunque la conexión esté floja: es lo primero que ve alguien nuevo. */
+const CACHE = "staff-board-v4";
+const ESENCIALES = ["/", "/login", "/instalar", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
   // skipWaiting: la versión nueva toma el control de inmediato,
   // sin esperar a que la persona cierre todas las pestañas.
   e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(ESENCIALES)).catch(() => {}).then(() => self.skipWaiting())
+    caches
+      .open(CACHE)
+      // addAll falla entero si un solo archivo falla; por eso vamos uno por uno.
+      .then((c) => Promise.all(ESENCIALES.map((u) => c.add(u).catch(() => {}))))
+      .catch(() => {})
+      .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches.keys()
+    caches
+      .keys()
       .then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
@@ -41,6 +46,13 @@ self.addEventListener("fetch", (e) => {
 
   // Nunca cachear llamadas a la base de datos ni al servidor.
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) return;
+
+  // El manifiesto siempre desde la red: si se sirve una versión vieja,
+  // el navegador puede negarse a instalar la app.
+  if (url.pathname === "/manifest.json") {
+    e.respondWith(fetch(request).catch(() => caches.match(request)));
+    return;
+  }
 
   const esImagenOFuente = /\.(png|jpg|jpeg|svg|ico|webp|woff2?)$/.test(url.pathname);
 
@@ -73,7 +85,9 @@ self.addEventListener("fetch", (e) => {
         return res;
       })
       .catch(() =>
-        caches.match(request).then((r) => r || (request.mode === "navigate" ? caches.match("/") : undefined))
+        caches
+          .match(request)
+          .then((r) => r || (request.mode === "navigate" ? caches.match("/") : undefined))
       )
   );
 });

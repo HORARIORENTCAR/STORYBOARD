@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, Search, ChevronDown, UserCog, SlidersHorizontal, History, LogOut, Users2, Building2, ShieldCheck, X, ListChecks } from "lucide-react";
+import { Bell, Search, ChevronDown, UserCog, SlidersHorizontal, History, LogOut, Users2, Building2, ShieldCheck, X, ListChecks, Smartphone } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
 import { timeAgo, cx } from "@/lib/utils";
@@ -241,6 +241,7 @@ export function Topbar() {
               <MenuLink href="/perfil" icon={UserCog} title="Mi perfil" subtitle="Nombre, cargo y área" />
               <MenuLink href="/agenda" icon={SlidersHorizontal} title="Mi agenda" subtitle="Mis tareas y próximas fechas" />
               <MenuLink href="/historial" icon={History} title="Historial de actividad" subtitle="Todo lo que ha pasado en la plataforma" />
+              <MenuLink href="/instalar" icon={Smartphone} title="Instalar la app" subtitle="En tu celular o computadora" />
               {currentUser?.role === "admin" && (
                 <>
                   <div className="my-2 h-px bg-ink-100" />

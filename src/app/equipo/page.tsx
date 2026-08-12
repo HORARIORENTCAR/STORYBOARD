@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { autocorregir } from "@/lib/ortografia";
-import { Search, UserPlus, ShieldCheck, MoreHorizontal, KeyRound, Trash2, X, Copy, Download, Pencil, ListChecks, Check } from "lucide-react";
+import { Search, UserPlus, ShieldCheck, MoreHorizontal, KeyRound, Trash2, X, Copy, Download, Pencil, ListChecks, Check, Smartphone } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { Credenciales, useApp } from "@/lib/store";
@@ -146,7 +147,22 @@ export default function EquipoPage() {
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               onClick={async () => {
-                const texto = `Acceso a Staff Board\nSitio: ${typeof window !== "undefined" ? window.location.origin : ""}\nCorreo: ${credenciales.email}\nContraseña: ${credenciales.password}`;
+                const sitio = typeof window !== "undefined" ? window.location.origin : "";
+                const texto = [
+                  `Hola ${credenciales.nombre}, ya tienes tu acceso a Staff Board.`,
+                  ``,
+                  `1) Abre este enlace: ${sitio}/instalar`,
+                  `   Ahí te dice, paso a paso, cómo dejar la app instalada en tu`,
+                  `   celular y en tu computadora. No se descarga de Google Play`,
+                  `   ni de la App Store: se instala desde ese mismo enlace.`,
+                  ``,
+                  `2) Entra con estos datos:`,
+                  `   Correo: ${credenciales.email}`,
+                  `   Contraseña: ${credenciales.password}`,
+                  ``,
+                  `Guarda esta contraseña. Es solo de Staff Board, NO es la de tu`,
+                  `correo institucional. Puedes cambiarla luego desde Mi perfil.`,
+                ].join("\n");
                 try {
                   await navigator.clipboard.writeText(texto);
                   setCopiado(true);
@@ -157,12 +173,19 @@ export default function EquipoPage() {
               }}
               className="btn-primary !py-2 !text-sm"
             >
-              <Copy className="h-4 w-4" /> {copiado ? "¡Copiado!" : "Copiar para enviar por WhatsApp"}
+              <Copy className="h-4 w-4" /> {copiado ? "¡Copiado!" : "Copiar mensaje completo para WhatsApp"}
             </button>
+            <Link href="/instalar" className="btn-secondary !py-2 !text-sm">
+              <Smartphone className="h-4 w-4" /> Ver la guía de instalación
+            </Link>
             <p className="text-xs font-medium text-rose-700">
               Guarda o envía esto ahora. Por seguridad no se vuelve a mostrar.
             </p>
           </div>
+          <p className="mt-2.5 text-xs leading-relaxed text-brand-800">
+            El mensaje que se copia ya incluye el enlace de instalación y las instrucciones,
+            para que la persona pueda dejar el ícono en su celular sin que tengas que explicárselo.
+          </p>
         </div>
       )}
 
