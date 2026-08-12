@@ -888,7 +888,7 @@ function NewEntryModal({
             rows={5}
             className="input min-h-[120px] resize-y"
             placeholder="Explica de qué se trata: objetivo, quiénes participan, qué deben llevar, acuerdos previos..."
-          / lang="es" spellCheck autoCapitalize="sentences" autoCorrect="on" />
+          />
           <p className="mt-1 text-xs text-ink-400">Escribe todo lo que haga falta, no hay límite de texto.</p>
         </div>
         <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
