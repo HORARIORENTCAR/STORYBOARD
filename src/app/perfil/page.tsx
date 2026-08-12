@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { autocorregir } from "@/lib/ortografia";
 import { Check, ShieldCheck } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
@@ -43,7 +44,7 @@ export default function PerfilPage() {
         <div className="space-y-4">
           <div>
             <label className="label">Nombre completo</label>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+            <input className="input" value={name} onChange={(e) => setName(autocorregir(e.target.value))} />
           </div>
           <div>
             <label className="label">Correo institucional</label>
@@ -53,11 +54,11 @@ export default function PerfilPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="label">Cargo</label>
-              <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
+              <input className="input" value={title} onChange={(e) => setTitle(autocorregir(e.target.value))} />
             </div>
             <div>
               <label className="label">Área</label>
-              <input className="input" value={area} onChange={(e) => setArea(e.target.value)} />
+              <input className="input" value={area} onChange={(e) => setArea(autocorregir(e.target.value))} />
             </div>
           </div>
         </div>

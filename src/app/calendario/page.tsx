@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { autocorregir } from "@/lib/ortografia";
 import { ChevronLeft, ChevronRight, Plus, Download, Sprout, Trash2, Upload, FileText, X, Pencil, StickyNote } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
@@ -361,15 +362,15 @@ export default function CalendarioPage() {
                   className="input !text-center"
                   placeholder="Ej. Valor del mes: la Responsabilidad"
                   value={valorTitulo}
-                  onChange={(e) => setValorTitulo(e.target.value)}
+                  onChange={(e) => setValorTitulo(autocorregir(e.target.value))}
                   autoFocus
                   required
                 />
-                <textarea
+                <textarea lang="es" spellCheck autoCapitalize="sentences" autoCorrect="on"
                   className="input min-h-[70px] resize-y !text-center !text-sm"
                   placeholder="Frase o lema del mes (opcional)"
                   value={valorLema}
-                  onChange={(e) => setValorLema(e.target.value)}
+                  onChange={(e) => setValorLema(autocorregir(e.target.value))}
                 />
                 <div className="flex justify-center gap-2 pt-1">
                   <button type="button" onClick={() => setEditandoValor(false)} className="btn-secondary !py-1.5 !text-xs">
@@ -497,7 +498,7 @@ export default function CalendarioPage() {
               <input
                 className="input"
                 value={borrador.title}
-                onChange={(e) => setBorrador({ ...borrador, title: e.target.value })}
+                onChange={(e) => setBorrador({ ...borrador, title: autocorregir(e.target.value) })}
                 required
               />
             </div>
@@ -549,7 +550,7 @@ export default function CalendarioPage() {
                 <input
                   className="input"
                   value={borrador.location}
-                  onChange={(e) => setBorrador({ ...borrador, location: e.target.value })}
+                  onChange={(e) => setBorrador({ ...borrador, location: autocorregir(e.target.value) })}
                 />
               </div>
               <div>
@@ -567,7 +568,7 @@ export default function CalendarioPage() {
               <input
                 className="input"
                 value={borrador.responsibles}
-                onChange={(e) => setBorrador({ ...borrador, responsibles: e.target.value })}
+                onChange={(e) => setBorrador({ ...borrador, responsibles: autocorregir(e.target.value) })}
               />
             </div>
 
@@ -584,11 +585,11 @@ export default function CalendarioPage() {
 
             <div>
               <label className="label">Descripción (opcional)</label>
-              <textarea
+              <textarea lang="es" spellCheck autoCapitalize="sentences" autoCorrect="on"
                 rows={5}
                 className="input min-h-[120px] resize-y"
                 value={borrador.description}
-                onChange={(e) => setBorrador({ ...borrador, description: e.target.value })}
+                onChange={(e) => setBorrador({ ...borrador, description: autocorregir(e.target.value) })}
               />
             </div>
 
@@ -704,13 +705,13 @@ export default function CalendarioPage() {
 
           {muralEditando ? (
             <>
-              <textarea
+              <textarea lang="es" spellCheck autoCapitalize="sentences" autoCorrect="on"
                 rows={10}
                 autoFocus
                 className="input min-h-[220px] resize-y"
                 placeholder="Recordatorios, acuerdos de la reunión, pendientes del mes, avisos para todo el personal..."
                 value={muralTexto}
-                onChange={(e) => setMuralTexto(e.target.value)}
+                onChange={(e) => setMuralTexto(autocorregir(e.target.value))}
               />
               {muralAviso && <p className="text-xs font-medium text-rose-600">{muralAviso}</p>}
               <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
@@ -882,12 +883,12 @@ function NewEntryModal({
         </div>
         <div>
           <label className="label">Descripción (opcional)</label>
-          <textarea
+          <textarea lang="es" spellCheck autoCapitalize="sentences" autoCorrect="on"
             name="description"
             rows={5}
             className="input min-h-[120px] resize-y"
             placeholder="Explica de qué se trata: objetivo, quiénes participan, qué deben llevar, acuerdos previos..."
-          />
+          / lang="es" spellCheck autoCapitalize="sentences" autoCorrect="on" />
           <p className="mt-1 text-xs text-ink-400">Escribe todo lo que haga falta, no hay límite de texto.</p>
         </div>
         <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">

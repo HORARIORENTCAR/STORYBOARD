@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { autocorregir } from "@/lib/ortografia";
 import { Modal } from "@/components/ui/modal";
 import { useApp } from "@/lib/store";
 import { EventColor, EventStatus, SchoolEvent } from "@/lib/types";
@@ -89,15 +90,15 @@ export function EventFormModal({
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label className="label">Nombre del evento</label>
-          <input className="input" placeholder="Ej. Semana de la Familia" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input className="input" placeholder="Ej. Semana de la Familia" value={name} onChange={(e) => setName(autocorregir(e.target.value))} required />
         </div>
         <div>
           <label className="label">Descripción</label>
-          <textarea
+          <textarea lang="es" spellCheck autoCapitalize="sentences" autoCorrect="on"
             className="input min-h-[90px] resize-none"
             placeholder="Explica brevemente el propósito del evento..."
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => setDescription(autocorregir(e.target.value))}
           />
         </div>
         <div className="grid grid-cols-2 gap-4">

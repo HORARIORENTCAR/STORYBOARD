@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { autocorregir } from "@/lib/ortografia";
 import { Search, UserPlus, ShieldCheck, MoreHorizontal, KeyRound, Trash2, X, Copy, Download, Pencil, ListChecks, Check } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
@@ -248,19 +249,19 @@ export default function EquipoPage() {
                   <input
                     className="input !w-40 !py-1 !text-sm"
                     value={edit.name}
-                    onChange={(e) => setEdit({ ...edit, name: e.target.value })}
+                    onChange={(e) => setEdit({ ...edit, name: autocorregir(e.target.value) })}
                     placeholder="Nombre"
                   />
                   <input
                     className="input !w-44 !py-1 !text-sm"
                     value={edit.title}
-                    onChange={(e) => setEdit({ ...edit, title: e.target.value })}
+                    onChange={(e) => setEdit({ ...edit, title: autocorregir(e.target.value) })}
                     placeholder="Cargo"
                   />
                   <input
                     className="input !w-36 !py-1 !text-sm"
                     value={edit.area}
-                    onChange={(e) => setEdit({ ...edit, area: e.target.value })}
+                    onChange={(e) => setEdit({ ...edit, area: autocorregir(e.target.value) })}
                     placeholder="Área"
                   />
                   <button type="submit" className="btn-primary !px-2.5 !py-1 !text-xs" title="Guardar">

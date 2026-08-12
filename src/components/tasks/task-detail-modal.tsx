@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { autocorregir } from "@/lib/ortografia";
 import { Modal } from "@/components/ui/modal";
 import { TaskFormModal } from "./task-form-modal";
 import { useApp } from "@/lib/store";
@@ -657,7 +658,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                 placeholder={subiendo ? "Enviando..." : "Escribe un mensaje..."}
                 disabled={subiendo}
                 value={message}
-                onChange={(e) => setMessage(e.target.value)}
+                onChange={(e) => setMessage(autocorregir(e.target.value))}
               />
               <button type="submit" disabled={subiendo} className="btn-primary !px-3.5">
                 {subiendo ? <Hourglass className="h-4 w-4 animate-pulse" /> : <Send className="h-4 w-4" />}

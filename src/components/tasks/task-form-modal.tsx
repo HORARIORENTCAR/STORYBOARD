@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { autocorregir } from "@/lib/ortografia";
 import { Modal } from "@/components/ui/modal";
 import { useApp } from "@/lib/store";
 import { EventColor, EventTask, TaskPriority } from "@/lib/types";
@@ -94,11 +95,11 @@ export function TaskFormModal({
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
           <label className="label">Nombre de la tarea</label>
-          <input className="input" placeholder="Ej. Decoración del escenario" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input className="input" placeholder="Ej. Decoración del escenario" value={name} onChange={(e) => setName(autocorregir(e.target.value))} required />
         </div>
         <div>
           <label className="label">Descripción</label>
-          <textarea className="input min-h-[80px] resize-none" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <textarea lang="es" spellCheck autoCapitalize="sentences" autoCorrect="on" className="input min-h-[80px] resize-none" value={description} onChange={(e) => setDescription(autocorregir(e.target.value))} />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
