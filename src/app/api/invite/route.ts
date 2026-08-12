@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { generarPassword } from "@/lib/password";
 
 /**
  * POST /api/invite
- * Solo debe llamarse desde la pantalla de Equipo (admin). Crea la cuenta de
- * autenticación de la persona invitada y su fila en profiles con status
- * "invited". Supabase le envía un correo con un enlace para poner su
- * contraseña e iniciar sesión.
- *
- * Se valida aquí (no solo en el cliente) que el correo pertenezca al dominio
- * institucional, y que quien invita sea realmente un admin.
+ * Crea la cuenta de una persona del personal con una contraseña generada por
+ * Staff Board y la devuelve para que el administrador se la entregue.
+ * No depende de que llegue ningún correo.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -21,44 +18,45 @@ export async function POST(req: NextRequest) {
 
     const admin = getSupabaseAdmin();
 
-    // 1. Verificar que quien invita sea admin.
+    // 1. Solo un administrador puede crear cuentas.
     const { data: requester, error: reqErr } = await admin
       .from("profiles")
       .select("role")
       .eq("id", requesterId)
       .single();
     if (reqErr || requester?.role !== "admin") {
-      return NextResponse.json({ error: "Solo un administrador puede invitar personas." }, { status: 403 });
+      return NextResponse.json({ error: "Solo un administrador puede agregar personas." }, { status: 403 });
     }
 
-    // 2. Verificar dominio institucional.
+    // 2. El correo debe pertenecer a alguno de los dominios institucionales.
     const { data: settings } = await admin.from("institution_settings").select("domain").single();
-    // El colegio puede tener varios dominios, separados por comas.
     const dominios = String(settings?.domain ?? "")
       .split(/[,;\s]+/)
       .map((d) => d.trim().replace(/^@/, "").toLowerCase())
       .filter(Boolean);
-    if (dominios.length > 0) {
-      const limpio = String(email).trim().toLowerCase();
-      const permitido = dominios.some((d) => limpio.endsWith("@" + d));
-      if (!permitido) {
-        return NextResponse.json(
-          { error: `El correo debe pertenecer a: ${dominios.map((d) => "@" + d).join(", ")}` },
-          { status: 400 }
-        );
-      }
+    const correo = String(email).trim().toLowerCase();
+    if (dominios.length > 0 && !dominios.some((d) => correo.endsWith("@" + d))) {
+      return NextResponse.json(
+        { error: `El correo debe pertenecer a: ${dominios.map((d) => "@" + d).join(", ")}` },
+        { status: 400 }
+      );
     }
 
-    // 3. Crear el usuario en Supabase Auth y enviarle el correo de invitación.
-    const redirectTo = process.env.NEXT_PUBLIC_SITE_URL
-      ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
-      : undefined;
-    const { data: created, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo });
-    if (inviteErr || !created?.user) {
-      return NextResponse.json({ error: inviteErr?.message ?? "No se pudo invitar a la persona." }, { status: 400 });
+    // 3. Crear la cuenta ya lista para usarse, con contraseña propia de Staff Board.
+    const password = generarPassword();
+    const { data: created, error: createErr } = await admin.auth.admin.createUser({
+      email: correo,
+      password,
+      email_confirm: true,
+    });
+    if (createErr || !created?.user) {
+      const msg = (createErr?.message ?? "").toLowerCase().includes("already")
+        ? "Ya existe una cuenta con ese correo."
+        : createErr?.message ?? "No se pudo crear la cuenta.";
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
 
-    // 4. Crear su perfil.
+    // 4. Crear su ficha en el directorio del personal.
     const initials = String(name)
       .split(" ")
       .map((n: string) => n[0])
@@ -68,19 +66,21 @@ export async function POST(req: NextRequest) {
     const { error: profileErr } = await admin.from("profiles").insert({
       id: created.user.id,
       name,
-      email,
+      email: correo,
       role: role ?? "member",
       title: title ?? null,
       area: area ?? null,
-      status: "invited",
+      status: "active",
       initials,
       color: "#18854e",
     });
     if (profileErr) {
+      // Si la ficha falla, no dejamos una cuenta huérfana.
+      await admin.auth.admin.deleteUser(created.user.id);
       return NextResponse.json({ error: profileErr.message }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true, userId: created.user.id });
+    return NextResponse.json({ ok: true, userId: created.user.id, email: correo, password });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Error inesperado" }, { status: 500 });
   }

@@ -38,11 +38,17 @@ export default function AuthCallbackPage() {
     }
     setSaving(true);
     const { error: err } = await supabase!.auth.updateUser({ password });
-    setSaving(false);
     if (err) {
+      setSaving(false);
       setError(err.message);
       return;
     }
+    // La cuenta pasa de "invitada" a "activa" en cuanto define su contraseña.
+    const { data } = await supabase!.auth.getUser();
+    if (data.user?.id) {
+      await supabase!.from("profiles").update({ status: "active" }).eq("id", data.user.id);
+    }
+    setSaving(false);
     router.push("/");
   }
 
@@ -53,7 +59,10 @@ export default function AuthCallbackPage() {
           <Sparkles className="h-5 w-5" />
         </div>
         <h1 className="text-xl font-bold text-ink-900">Crea tu contraseña</h1>
-        <p className="mt-1.5 text-sm text-ink-500">Último paso para activar tu cuenta de Staff Board.</p>
+        <p className="mt-1.5 text-sm text-ink-500">
+          Elige una contraseña <strong>nueva y exclusiva para Staff Board</strong>. No es la de tu correo
+          y nadie más la conoce.
+        </p>
 
         {!isSupabaseConfigured ? (
           <p className="mt-4 text-sm text-rose-600">Supabase no está configurado en este proyecto.</p>

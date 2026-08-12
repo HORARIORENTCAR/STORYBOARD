@@ -7,12 +7,13 @@ import { useApp } from "@/lib/store";
 import { isSupabaseConfigured } from "@/lib/supabase";
 
 export default function LoginPage() {
-  const { login, settings, configError, loggedIn, loading } = useApp();
+  const { login, sendPasswordLink, settings, configError, loggedIn, loading } = useApp();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const [aviso, setAviso] = useState("");
 
   useEffect(() => {
     if (!loading && loggedIn) router.replace("/");
@@ -90,6 +91,7 @@ export default function LoginPage() {
               />
             </div>
             {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
+            {aviso && <p className="text-xs font-medium text-brand-700">{aviso}</p>}
             <button type="submit" className="btn-primary w-full" disabled={sending || !isSupabaseConfigured}>
               {sending ? "Entrando..." : (
                 <>
@@ -97,8 +99,29 @@ export default function LoginPage() {
                 </>
               )}
             </button>
+            <button
+              type="button"
+              onClick={async () => {
+                setError("");
+                setAviso("");
+                if (!email.trim()) {
+                  setError("Escribe primero tu correo institucional.");
+                  return;
+                }
+                setSending(true);
+                const err = await sendPasswordLink(email);
+                setSending(false);
+                if (err) setError(err);
+                else setAviso("Te enviamos un correo con un enlace para crear tu contraseña. Revisa tu bandeja y la carpeta de spam.");
+              }}
+              className="w-full text-center text-xs font-medium text-brand-700 hover:underline"
+            >
+              Olvidé mi contraseña / aún no la he creado
+            </button>
+
             <p className="text-center text-xs text-ink-400">
-              ¿No tienes cuenta todavía? Pídele a un administrador que te invite desde la sección Equipo.
+              Tu contraseña es exclusiva de Staff Board: no es la de tu correo. ¿No tienes cuenta todavía?
+              Pídele a un administrador que te invite desde la sección Equipo.
             </p>
           </form>
         </div>

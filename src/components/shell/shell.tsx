@@ -8,15 +8,22 @@ import { Topbar } from "./topbar";
 import { MobileNav } from "./mobile-nav";
 
 export function Shell({ children }: { children: React.ReactNode }) {
-  const { loggedIn, loading } = useApp();
+  const { loggedIn, loading, currentUser } = useApp();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !loggedIn && pathname !== "/login" && !pathname.startsWith("/auth")) {
+    if (loading) return;
+    if (!loggedIn && pathname !== "/login" && !pathname.startsWith("/auth")) {
       router.replace("/login");
+      return;
     }
-  }, [loading, loggedIn, pathname, router]);
+    /* Quien entró por el enlace de invitación y todavía no eligió contraseña
+       debe hacerlo antes de usar la plataforma; si no, no podría volver a entrar. */
+    if (loggedIn && currentUser?.status === "invited" && !pathname.startsWith("/auth")) {
+      router.replace("/auth/callback");
+    }
+  }, [loading, loggedIn, currentUser, pathname, router]);
 
   if (loading) {
     return (

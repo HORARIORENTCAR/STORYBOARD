@@ -39,6 +39,13 @@ const defaultSettings: InstitutionSettings = {
   notifyDeadline: true,
 };
 
+/** Datos de acceso que Staff Board entrega al crear o restablecer una cuenta. */
+export interface Credenciales {
+  nombre: string;
+  email: string;
+  password: string;
+}
+
 interface StoredState {
   users: StaffUser[];
   events: SchoolEvent[];
@@ -210,7 +217,9 @@ interface AppContextValue extends StoredState {
   updateCalendarEntry: (id: string, patch: Partial<Omit<CalendarEntry, "id">>) => Promise<void>;
   removeCalendarEntry: (id: string) => Promise<void>;
   updateSettings: (patch: Partial<InstitutionSettings>) => Promise<void>;
-  addUser: (data: { name: string; email: string; role: "admin" | "member"; title?: string; area?: string }) => Promise<string | void>;
+  addUser: (data: { name: string; email: string; role: "admin" | "member"; title?: string; area?: string }) => Promise<{ error?: string; credenciales?: Credenciales }>;
+  /** Genera una contraseña nueva para alguien y la devuelve. */
+  resetUserPassword: (id: string) => Promise<{ error?: string; credenciales?: Credenciales }>;
   updateUserRole: (id: string, role: "admin" | "member") => Promise<string | void>;
   updateProfile: (patch: { name?: string; title?: string; area?: string }) => Promise<void>;
   removeUser: (id: string) => Promise<string | void>;
@@ -218,6 +227,10 @@ interface AppContextValue extends StoredState {
   searchAll: (q: string) => { events: SchoolEvent[]; tasks: EventTask[]; people: StaffUser[] };
   markNotificationRead: (id: string) => Promise<void>;
   markAllNotificationsRead: () => Promise<void>;
+  /** Envía el correo para crear o recuperar la contraseña. */
+  sendPasswordLink: (email: string) => Promise<string | void>;
+  /** Cada persona puede cambiar su propia contraseña desde su perfil. */
+  changeMyPassword: (nueva: string) => Promise<string | void>;
   login: (email: string, password: string) => Promise<string | void>;
   logout: () => Promise<void>;
   logHistory: (action: string, detail: string, type: HistoryEntry["type"]) => void;
@@ -881,6 +894,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   /** Invita a alguien nuevo: pasa por /api/invite (usa la llave de servicio). */
+  const recargarPersonal = useCallback(async () => {
+    if (!supabase) return;
+    const { data: profiles } = await supabase.from("profiles").select("*");
+    if (profiles) setState((prev) => ({ ...prev, users: profiles.map(mapProfile) }));
+  }, []);
+
   const addUser: AppContextValue["addUser"] = useCallback(
     async (data) => {
       const res = await fetch("/api/invite", {
@@ -889,14 +908,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ ...data, requesterId: stateRef.current.currentUserId }),
       });
       const body = await res.json();
-      if (!res.ok) return body.error ?? "No se pudo invitar a la persona.";
+      if (!res.ok) return { error: body.error ?? "No se pudo crear la cuenta." };
       logHistory("agregó al colaborador", data.name, "Equipo");
-      if (supabase) {
-        const { data: profiles } = await supabase.from("profiles").select("*");
-        if (profiles) setState((prev) => ({ ...prev, users: profiles.map(mapProfile) }));
-      }
+      await recargarPersonal();
+      return { credenciales: { nombre: data.name, email: body.email, password: body.password } };
     },
-    [logHistory]
+    [logHistory, recargarPersonal]
+  );
+
+  const resetUserPassword: AppContextValue["resetUserPassword"] = useCallback(
+    async (id) => {
+      const res = await fetch("/api/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: id, requesterId: stateRef.current.currentUserId }),
+      });
+      const body = await res.json();
+      if (!res.ok) return { error: body.error ?? "No se pudo generar la contraseña." };
+      logHistory("generó una contraseña nueva para", body.name ?? "", "Equipo");
+      await recargarPersonal();
+      return { credenciales: { nombre: body.name, email: body.email, password: body.password } };
+    },
+    [logHistory, recargarPersonal]
   );
 
   /**
@@ -1031,6 +1064,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setState((prev) => ({ ...prev, notifications: prev.notifications.map((n) => ({ ...n, read: true })) }));
   }, []);
 
+  const sendPasswordLink: AppContextValue["sendPasswordLink"] = useCallback(async (email) => {
+    if (!supabase) return "Falta conectar Supabase.";
+    const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined;
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+    if (error) return error.message;
+  }, []);
+
+  const changeMyPassword: AppContextValue["changeMyPassword"] = useCallback(async (nueva) => {
+    if (!supabase) return "Supabase no está configurado";
+    if (nueva.length < 8) return "La contraseña debe tener al menos 8 caracteres.";
+    const { error } = await supabase.auth.updateUser({ password: nueva });
+    if (error) return error.message;
+  }, []);
+
   const login: AppContextValue["login"] = useCallback(async (email, password) => {
     if (!supabase) return "Falta conectar Supabase (revisa .env.local).";
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -1110,6 +1157,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     removeCalendarEntry,
     updateSettings,
     addUser,
+    resetUserPassword,
     updateUserRole,
     updateProfile,
     removeUser,
@@ -1117,6 +1165,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     searchAll,
     markNotificationRead,
     markAllNotificationsRead,
+    sendPasswordLink,
+    changeMyPassword,
     login,
     logout,
     logHistory,

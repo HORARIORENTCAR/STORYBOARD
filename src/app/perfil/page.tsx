@@ -8,7 +8,11 @@ import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
 
 export default function PerfilPage() {
-  const { currentUser, settings, updateProfile } = useApp();
+  const { currentUser, settings, updateProfile, changeMyPassword } = useApp();
+  const [pass1, setPass1] = useState("");
+  const [pass2, setPass2] = useState("");
+  const [passMsg, setPassMsg] = useState("");
+  const [passErr, setPassErr] = useState("");
   const [name, setName] = useState(currentUser?.name ?? "");
   const [title, setTitle] = useState(currentUser?.title ?? "");
   const [area, setArea] = useState(currentUser?.area ?? "");
@@ -63,6 +67,59 @@ export default function PerfilPage() {
             {saved ? <Check className="h-4 w-4" /> : null} {saved ? "Guardado" : "Guardar cambios"}
           </button>
         </div>
+      </div>
+    
+      <div className="card mt-6 max-w-2xl p-5 sm:p-6">
+        <p className="text-sm font-bold text-ink-900">Cambiar mi contraseña</p>
+        <p className="mt-0.5 text-xs text-ink-500">
+          Es tu contraseña de Staff Board, no la de tu correo. Mínimo 8 caracteres.
+        </p>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setPassErr("");
+            setPassMsg("");
+            if (pass1 !== pass2) {
+              setPassErr("Las contraseñas no coinciden.");
+              return;
+            }
+            const err = await changeMyPassword(pass1);
+            if (err) {
+              setPassErr(err);
+              return;
+            }
+            setPass1("");
+            setPass2("");
+            setPassMsg("Listo, tu contraseña quedó cambiada.");
+          }}
+          className="mt-4 grid gap-3 sm:grid-cols-2"
+        >
+          <input
+            type="password"
+            className="input"
+            placeholder="Nueva contraseña"
+            value={pass1}
+            onChange={(e) => setPass1(e.target.value)}
+            minLength={8}
+            required
+          />
+          <input
+            type="password"
+            className="input"
+            placeholder="Repite la contraseña"
+            value={pass2}
+            onChange={(e) => setPass2(e.target.value)}
+            minLength={8}
+            required
+          />
+          <div className="sm:col-span-2">
+            {passErr && <p className="mb-2 text-xs font-medium text-rose-600">{passErr}</p>}
+            {passMsg && <p className="mb-2 text-xs font-medium text-brand-700">{passMsg}</p>}
+            <button type="submit" className="btn-primary !py-2 !text-sm">
+              Guardar contraseña
+            </button>
+          </div>
+        </form>
       </div>
     </Shell>
   );

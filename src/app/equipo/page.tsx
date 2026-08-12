@@ -1,21 +1,23 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, UserPlus, ShieldCheck, MoreHorizontal, Mail, Trash2 } from "lucide-react";
+import { Search, UserPlus, ShieldCheck, MoreHorizontal, KeyRound, Trash2, X, Copy } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
-import { useApp } from "@/lib/store";
+import { Credenciales, useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
 import { Modal } from "@/components/ui/modal";
 import { correoPermitido, cx, textoDominios } from "@/lib/utils";
 import { Role } from "@/lib/types";
 
 export default function EquipoPage() {
-  const { users, addUser, updateUserRole, settings, currentUser, removeUser, resendInvite } = useApp();
+  const { users, addUser, updateUserRole, settings, currentUser, removeUser, resetUserPassword } = useApp();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
+  const [credenciales, setCredenciales] = useState<Credenciales | null>(null);
+  const [copiado, setCopiado] = useState(false);
 
   const filtered = useMemo(
     () => users.filter((u) => `${u.name} ${u.email} ${u.title ?? ""}`.toLowerCase().includes(query.toLowerCase())),
@@ -51,6 +53,61 @@ export default function EquipoPage() {
         <MiniStat label="cuentas activas" value={active} />
         <MiniStat label="administradores" value={admins} />
       </div>
+
+      {credenciales && (
+        <div className="mb-6 rounded-2xl border-2 border-brand-500 bg-brand-50 p-5">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-brand-700">Datos de acceso</p>
+              <p className="text-lg font-bold text-brand-900">Entrégale esto a {credenciales.nombre}</p>
+            </div>
+            <button
+              onClick={() => {
+                setCredenciales(null);
+                setCopiado(false);
+              }}
+              aria-label="Cerrar"
+              className="rounded-lg p-1 text-brand-700 hover:bg-brand-100"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-brand-200 bg-white px-4 py-3">
+              <p className="text-xs font-medium text-ink-400">Correo</p>
+              <p className="mt-0.5 break-all font-mono text-base font-semibold text-ink-900">{credenciales.email}</p>
+            </div>
+            <div className="rounded-xl border border-brand-200 bg-white px-4 py-3">
+              <p className="text-xs font-medium text-ink-400">Contraseña</p>
+              <p className="mt-0.5 select-all font-mono text-2xl font-bold tracking-wide text-brand-800">
+                {credenciales.password}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              onClick={async () => {
+                const texto = `Acceso a Staff Board\nSitio: ${typeof window !== "undefined" ? window.location.origin : ""}\nCorreo: ${credenciales.email}\nContraseña: ${credenciales.password}`;
+                try {
+                  await navigator.clipboard.writeText(texto);
+                  setCopiado(true);
+                  setTimeout(() => setCopiado(false), 2500);
+                } catch {
+                  setNotice("No se pudo copiar. Selecciona el texto y cópialo a mano.");
+                }
+              }}
+              className="btn-primary !py-2 !text-sm"
+            >
+              <Copy className="h-4 w-4" /> {copiado ? "¡Copiado!" : "Copiar para enviar por WhatsApp"}
+            </button>
+            <p className="text-xs font-medium text-rose-700">
+              Guarda o envía esto ahora. Por seguridad no se vuelve a mostrar.
+            </p>
+          </div>
+        </div>
+      )}
 
       {notice && (
         <div className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-800">
@@ -122,13 +179,15 @@ export default function EquipoPage() {
                       <button
                         onClick={async () => {
                           setMenuFor(null);
-                          const err = await resendInvite(u.email);
-                          setNotice(err ? err : `Se envió un correo de acceso a ${u.email}.`);
+                          if (!window.confirm(`¿Generar una contraseña nueva para ${u.name}? La anterior dejará de servir.`)) return;
+                          const r = await resetUserPassword(u.id);
+                          if (r.error) setNotice(r.error);
+                          else if (r.credenciales) setCredenciales(r.credenciales);
                         }}
                         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-ink-700 hover:bg-ink-50"
                       >
-                        <Mail className="h-4 w-4 text-ink-400" />
-                        {u.status === "invited" ? "Reenviar invitación" : "Enviar acceso por correo"}
+                        <KeyRound className="h-4 w-4 text-ink-400" />
+                        Generar contraseña nueva
                       </button>
                       <div className="my-1 h-px bg-ink-100" />
                       <button
@@ -159,7 +218,14 @@ export default function EquipoPage() {
         ))}
       </div>
 
-      <AddMemberModal open={open} onClose={() => setOpen(false)} onSave={addUser} domain={settings.domain} existing={users.map((u) => u.email.toLowerCase())} />
+      <AddMemberModal
+        open={open}
+        onClose={() => setOpen(false)}
+        onSave={addUser}
+        onCreada={(c) => setCredenciales(c)}
+        domain={settings.domain}
+        existing={users.map((u) => u.email.toLowerCase())}
+      />
     </Shell>
   );
 }
@@ -182,12 +248,14 @@ function AddMemberModal({
   open,
   onClose,
   onSave,
+  onCreada,
   domain,
   existing,
 }: {
   open: boolean;
   onClose: () => void;
-  onSave: (data: { name: string; email: string; role: Role; title?: string }) => Promise<string | void>;
+  onSave: (data: { name: string; email: string; role: Role; title?: string }) => Promise<{ error?: string; credenciales?: Credenciales }>;
+  onCreada: (c: Credenciales) => void;
   domain: string;
   existing: string[];
 }) {
@@ -195,6 +263,10 @@ function AddMemberModal({
   const [sending, setSending] = useState(false);
   return (
     <Modal open={open} onClose={onClose} eyebrow="Equipo" title="Agregar colaborador" size="sm">
+      <div className="-mt-3 mb-4 rounded-xl border border-ink-200 bg-ink-50 px-3.5 py-2.5 text-xs leading-relaxed text-ink-600">
+        Staff Board le creará una contraseña propia y te la mostrará en pantalla para que se la
+        entregues. <strong>No usa la contraseña de su correo institucional.</strong>
+      </div>
       <form
         onSubmit={async (e) => {
           e.preventDefault();
@@ -215,17 +287,19 @@ function AddMemberModal({
           }
           setError("");
           setSending(true);
-          const err = await onSave({
+          const r = await onSave({
             name: String(data.get("name") || ""),
             email,
             role: (data.get("role") as Role) || "member",
             title: String(data.get("title") || ""),
           });
           setSending(false);
-          if (err) {
-            setError(err);
+          if (r.error) {
+            setError(r.error);
             return;
           }
+          if (r.credenciales) onCreada(r.credenciales);
+          (e.target as HTMLFormElement).reset();
           onClose();
         }}
         className="space-y-4"
@@ -258,7 +332,7 @@ function AddMemberModal({
             Cancelar
           </button>
           <button type="submit" className="btn-primary" disabled={sending}>
-            {sending ? "Enviando invitación..." : "+ Invitar"}
+            {sending ? "Creando cuenta..." : "+ Crear cuenta"}
           </button>
         </div>
       </form>
