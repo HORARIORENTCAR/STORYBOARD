@@ -1,11 +1,15 @@
 /**
  * CORRECCIÓN ORTOGRÁFICA EN ESPAÑOL
  *
- * Criterio de seguridad: solo se corrigen palabras que SIN tilde o SIN eñe
- * no existen en español. Por eso NO se tocan "mas", "el", "tu", "si", "se",
- * "esta", "como", "solo"... que son palabras válidas y cambiarlas arruinaría
- * el texto. Tampoco se corrige la palabra que se está escribiendo: solo la
- * anterior, cuando ya se escribió un espacio o un signo de puntuación.
+ * Tres capas, de la más segura a la más amplia:
+ *   1. Diccionario de palabras concretas (tildes y eñes).
+ *   2. Reglas de terminación, que cubren miles de palabras
+ *      ("planificacion" -> "planificación" sin tenerla en la lista).
+ *   3. Memoria de rechazos: si corrige mal una palabra y la persona la
+ *      vuelve a escribir igual, se rinde con esa palabra para siempre.
+ *
+ * Nunca se toca la palabra que se está escribiendo, solo las ya terminadas,
+ * ni las palabras que sin tilde también existen ("mas", "esta", "solo"...).
  */
 
 const CORRECCIONES: Record<string, string> = {
@@ -218,13 +222,115 @@ const CORRECCIONES: Record<string, string> = {
   version: "versión",
 };
 
+/**
+ * Reglas por terminación. Solo se aplican a palabras sin tilde ni eñe.
+ * Ojo: los plurales "-iones", "-ciones" ya son correctos sin tilde,
+ * por eso las reglas exigen que la palabra TERMINE en la forma singular.
+ */
+const REGLAS: { fin: RegExp; pon: string; minimo: number }[] = [
+  // Terminaciones en -ión: acción, gestión, camión, unión, reflexión...
+  { fin: /cion$/, pon: "ción", minimo: 6 },
+  { fin: /sion$/, pon: "sión", minimo: 6 },
+  { fin: /xion$/, pon: "xión", minimo: 6 },
+  { fin: /ion$/, pon: "ión", minimo: 6 },
+
+  // Campos del saber: psicología, metodología, ortografía, economía...
+  { fin: /logia$/, pon: "logía", minimo: 7 },
+  { fin: /logias$/, pon: "logías", minimo: 8 },
+  { fin: /grafia$/, pon: "grafía", minimo: 7 },
+  { fin: /grafias$/, pon: "grafías", minimo: 8 },
+  { fin: /nomia$/, pon: "nomía", minimo: 7 },
+  { fin: /nomias$/, pon: "nomías", minimo: 8 },
+  { fin: /metria$/, pon: "metría", minimo: 7 },
+  { fin: /sofia$/, pon: "sofía", minimo: 7 },
+
+  // Superlativos: buenísimo, grandísima, importantísimos...
+  { fin: /isimo$/, pon: "ísimo", minimo: 7 },
+  { fin: /isima$/, pon: "ísima", minimo: 7 },
+  { fin: /isimos$/, pon: "ísimos", minimo: 8 },
+  { fin: /isimas$/, pon: "ísimas", minimo: 8 },
+];
+
+/**
+ * Palabras que encajan en una regla pero NO llevan tilde.
+ * "guion" y "truhan" son monosílabas según la RAE; "ion" es demasiado corta.
+ */
+const INTOCABLES = new Set(["ion", "guion", "truhan", "muon", "pion"]);
+
+const TIENE_TILDE = /[áéíóúüñÁÉÍÓÚÜÑ]/;
+
 /** Copia el uso de mayúsculas de la palabra original. */
 function conMismaForma(original: string, corregida: string): string {
-  if (original === original.toUpperCase()) return corregida.toUpperCase();
+  if (original === original.toUpperCase() && original.length > 1) return corregida.toUpperCase();
   if (original[0] === original[0]?.toUpperCase()) {
     return corregida[0].toUpperCase() + corregida.slice(1);
   }
   return corregida;
+}
+
+/* ------------------------------------------------------------------
+   MEMORIA DE RECHAZOS
+   Si corregimos una palabra y la persona la vuelve a escribir igual,
+   entendemos que no quería la corrección y dejamos de tocarla.
+   ------------------------------------------------------------------ */
+const CLAVE = "staff-board-ortografia-rechazadas";
+let rechazadas: Set<string> | null = null;
+/** Última corrección aplicada, para saber si la persona la deshizo. */
+let ultima: { cruda: string; arreglada: string } | null = null;
+
+function cargarRechazadas(): Set<string> {
+  if (rechazadas) return rechazadas;
+  rechazadas = new Set();
+  try {
+    const guardado = typeof window !== "undefined" ? window.localStorage.getItem(CLAVE) : null;
+    if (guardado) JSON.parse(guardado).forEach((p: string) => rechazadas!.add(p));
+  } catch {
+    /* si no hay almacenamiento, seguimos sin memoria */
+  }
+  return rechazadas;
+}
+
+function recordarRechazo(palabra: string) {
+  const set = cargarRechazadas();
+  set.add(palabra);
+  try {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(CLAVE, JSON.stringify(Array.from(set)));
+    }
+  } catch {
+    /* sin almacenamiento, al menos vale para esta sesión */
+  }
+}
+
+/** Olvida todas las palabras rechazadas y vuelve a corregirlas. */
+export function reiniciarCorrector() {
+  rechazadas = new Set();
+  try {
+    if (typeof window !== "undefined") window.localStorage.removeItem(CLAVE);
+  } catch {
+    /* nada que hacer */
+  }
+}
+
+/** Devuelve la forma correcta de una palabra, o null si no hay nada que cambiar. */
+function corregirPalabra(palabra: string): string | null {
+  const min = palabra.toLowerCase();
+
+  if (cargarRechazadas().has(min)) return null;
+  if (TIENE_TILDE.test(palabra)) return null;
+
+  const delDiccionario = CORRECCIONES[min];
+  if (delDiccionario) return delDiccionario;
+
+  if (INTOCABLES.has(min)) return null;
+
+  for (const regla of REGLAS) {
+    if (min.length >= regla.minimo && regla.fin.test(min)) {
+      const arreglada = min.replace(regla.fin, regla.pon);
+      return arreglada === min ? null : arreglada;
+    }
+  }
+  return null;
 }
 
 /**
@@ -232,11 +338,25 @@ function conMismaForma(original: string, corregida: string): string {
  * La última palabra se deja intacta mientras se está escribiendo.
  */
 export function autocorregir(texto: string): string {
+  /* ¿La persona deshizo nuestra última corrección?
+     Lo sabemos si la forma corregida desapareció del texto y volvió la original.
+     Así no confundimos un rechazo con escribir la misma palabra dos veces. */
+  if (ultima) {
+    const bajo = texto.toLowerCase();
+    if (!bajo.includes(ultima.arreglada.toLowerCase()) && bajo.includes(ultima.cruda)) {
+      recordarRechazo(ultima.cruda);
+      ultima = null;
+    }
+  }
+
   return texto.replace(
     /([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)(?=[\s.,;:!?¡¿()\[\]"'\u2013\u2014/-])/g,
     (palabra) => {
-      const arreglo = CORRECCIONES[palabra.toLowerCase()];
-      return arreglo ? conMismaForma(palabra, arreglo) : palabra;
+      const arreglo = corregirPalabra(palabra);
+      if (!arreglo) return palabra;
+      const resultado = conMismaForma(palabra, arreglo);
+      ultima = { cruda: palabra.toLowerCase(), arreglada: arreglo };
+      return resultado;
     }
   );
 }
@@ -244,14 +364,4 @@ export function autocorregir(texto: string): string {
 /** Corrige el texto completo, incluida la última palabra. Para usar al guardar. */
 export function autocorregirFinal(texto: string): string {
   return autocorregir(texto + " ").slice(0, -1);
-}
-
-/** Cuántas palabras corregiría, sin modificar nada. Útil para avisar. */
-export function contarCorrecciones(texto: string): number {
-  const antes = texto;
-  const despues = autocorregirFinal(texto);
-  if (antes === despues) return 0;
-  const a = antes.split(/\s+/);
-  const b = despues.split(/\s+/);
-  return a.reduce((n, palabra, i) => (palabra !== b[i] ? n + 1 : n), 0);
 }

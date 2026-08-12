@@ -6,6 +6,7 @@ import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { useApp } from "@/lib/store";
 import { cx, textoDominios } from "@/lib/utils";
+import { reiniciarCorrector } from "@/lib/ortografia";
 
 const tabs = [
   { key: "general", label: "General", icon: Building2 },
@@ -21,6 +22,7 @@ export default function ConfiguracionPage() {
   const [tab, setTab] = useState<TabKey>("general");
   const [draft, setDraft] = useState(settings);
   const [saved, setSaved] = useState(false);
+  const [correctorReiniciado, setCorrectorReiniciado] = useState(false);
 
   if (currentUser?.role !== "admin") {
     return (
@@ -169,6 +171,27 @@ export default function ConfiguracionPage() {
                   className="mt-0.5 h-4 w-4 shrink-0 rounded border-ink-300 text-brand-700 focus:ring-brand-500"
                 />
               </label>
+
+              <div className="flex items-start justify-between gap-4 rounded-xl border border-ink-100 px-4 py-3.5">
+                <span>
+                  <span className="block text-sm font-medium text-ink-800">Corrector ortográfico</span>
+                  <span className="mt-0.5 block text-xs leading-relaxed text-ink-500">
+                    Corrige tildes y eñes mientras escribes. Si alguna vez corrige mal una palabra y la
+                    reescribes tal cual, deja de tocarla. Aquí puedes borrar esa memoria y que vuelva a
+                    corregir todo.
+                  </span>
+                </span>
+                <button
+                  onClick={() => {
+                    reiniciarCorrector();
+                    setCorrectorReiniciado(true);
+                    setTimeout(() => setCorrectorReiniciado(false), 2500);
+                  }}
+                  className="btn-secondary shrink-0 !py-1.5 !text-xs"
+                >
+                  {correctorReiniciado ? "Listo" : "Reiniciar"}
+                </button>
+              </div>
 
               <div className="flex items-center justify-between border-t border-ink-100 pt-5">
                 <p className="text-sm text-ink-500">Los cambios se aplicarán a toda la institución.</p>
