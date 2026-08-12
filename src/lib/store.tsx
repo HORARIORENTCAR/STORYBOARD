@@ -1351,8 +1351,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const login: AppContextValue["login"] = useCallback(async (email, password) => {
     if (!supabase) return "Falta conectar Supabase (revisa .env.local).";
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return "Correo o contraseña incorrectos.";
+
+    /* El correo se normaliza siempre: sin espacios y en minúsculas. Las cuentas
+       se guardan así, y en el celular el teclado pone mayúscula a la primera
+       letra sin que la persona se dé cuenta. Sin esto, la contraseña correcta
+       parecía incorrecta. */
+    const correo = email.trim().toLowerCase();
+    if (!correo || !password) return "Escribe tu correo y tu contraseña.";
+
+    const { error } = await supabase.auth.signInWithPassword({ email: correo, password });
+    if (!error) return;
+
+    /* Antes cualquier fallo decía "contraseña incorrecta", incluso cuando el
+       problema era otro. Eso hacía imposible ayudar a alguien por teléfono. */
+    const msg = (error.message ?? "").toLowerCase();
+    if (msg.includes("invalid login") || msg.includes("invalid credentials")) {
+      return "Correo o contraseña incorrectos. Revisa que no sobre ningún espacio y que las mayúsculas coincidan.";
+    }
+    if (msg.includes("not confirmed")) {
+      return "Tu cuenta aún no está confirmada. Pídele a un administrador que la genere de nuevo.";
+    }
+    if (msg.includes("rate limit") || msg.includes("too many")) {
+      return "Demasiados intentos seguidos. Espera un minuto y vuelve a probar.";
+    }
+    if (msg.includes("failed to fetch") || msg.includes("network")) {
+      return "No hay conexión con el servidor. Revisa tu internet e inténtalo otra vez.";
+    }
+    return error.message;
   }, []);
 
   const logout: AppContextValue["logout"] = useCallback(async () => {

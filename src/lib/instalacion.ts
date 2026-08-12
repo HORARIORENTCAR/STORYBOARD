@@ -7,7 +7,7 @@
 /* Marca de esta versión del código. Sirve para saber, de un vistazo, si lo que
    está publicado en internet es realmente lo último que subimos a GitHub.
    Si la página /instalar no muestra exactamente esta marca, el despliegue no llegó. */
-export const VERSION_APP = "2026.08.12-whatsapp";
+export const VERSION_APP = "2026.08.12-revision";
 
 export type EventoInstalacion = Event & {
   prompt: () => Promise<void>;
@@ -289,6 +289,32 @@ export async function diagnosticar(): Promise<Revision[]> {
     });
   } else {
     out.push({ nombre: "¿Ya está instalada?", estado: "bien", detalle: "No, se puede instalar." });
+  }
+
+  /* Cuando Android TERMINA de instalar la app, el navegador avisa con el evento
+     `appinstalled` y lo dejamos apuntado. Si está apuntado pero no ves el ícono,
+     la instalación sí funcionó y el ícono está en el cajón de aplicaciones, no en
+     la pantalla de inicio. Distinguir estos dos casos es lo que más cuesta
+     averiguar a ojo, y aquí lo sabemos con certeza. */
+  let confirmada = false;
+  try {
+    confirmada = window.localStorage.getItem("staff-board-instalada") === "1";
+  } catch {
+    /* sin almacenamiento no podemos saberlo */
+  }
+  if (confirmada && !yaEstaInstalada()) {
+    out.push({
+      nombre: "Instalación anterior",
+      estado: "aviso",
+      detalle:
+        "Este navegador YA completó la instalación una vez. Si no ves el ícono en la pantalla de inicio, está en el cajón de aplicaciones: desliza hacia arriba, busca «Staff Board» y arrástralo a la pantalla.",
+    });
+  } else if (!confirmada) {
+    out.push({
+      nombre: "Instalación anterior",
+      estado: "bien",
+      detalle: "Este navegador nunca ha llegado a completar una instalación aquí.",
+    });
   }
 
   const soporta = "onbeforeinstallprompt" in window;

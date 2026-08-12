@@ -57,7 +57,7 @@ export default function LoginPage() {
           <p className="section-eyebrow">Bienvenido de nuevo</p>
           <h2 className="mt-1 text-2xl font-bold text-ink-900">Inicia sesión</h2>
           <p className="mt-1.5 text-sm text-ink-500">
-            Usa el correo y la contraseña que definiste al aceptar tu invitación.
+            Usa tu correo institucional y la contraseña que te entregó el administrador.
           </p>
 
           {!isSupabaseConfigured && (
@@ -76,7 +76,11 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                autoComplete="username"
+                autoComplete="email"
+                inputMode="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
               />
             </div>
             <div>
@@ -89,6 +93,9 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
               />
             </div>
             {error && <p className="text-xs font-medium text-rose-600">{error}</p>}
