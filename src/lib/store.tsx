@@ -842,9 +842,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       contentType: file.type || undefined,
     });
     if (error) {
-      return error.message.toLowerCase().includes("bucket")
-        ? "Falta crear el almacenamiento en Supabase (ejecuta storage-archivos.sql)."
-        : error.message;
+      const m = error.message.toLowerCase();
+      if (m.includes("bucket")) return "Falta crear el almacén de archivos en Supabase (ejecuta ARREGLO-ADJUNTOS.sql).";
+      if (m.includes("policy") || m.includes("permission") || m.includes("unauthorized")) {
+        return "El almacén de archivos no te deja subir. Ejecuta ARREGLO-ADJUNTOS.sql en Supabase.";
+      }
+      if (m.includes("payload") || m.includes("too large")) return "El archivo es demasiado grande (máximo 25 MB).";
+      return `No se pudo subir el archivo: ${error.message}`;
     }
     const { data } = supabase.storage.from("staffboard").getPublicUrl(ruta);
     return { url: data.publicUrl, name: file.name };
@@ -876,7 +880,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         p_attachments: subidos,
         p_recipient: destinatario,
       });
-      if (error) return error.message;
+      if (error) {
+        const m = error.message.toLowerCase();
+        if (m.includes("could not choose") || m.includes("does not exist") || m.includes("not find the function")) {
+          return "Falta aplicar ARREGLO-ADJUNTOS.sql en Supabase (la función del chat quedó duplicada).";
+        }
+        return error.message;
+      }
 
       // Mostrarlo de inmediato sin esperar al aviso en tiempo real.
       // Si el aviso llega después, el mismo id evita que se duplique.
@@ -951,7 +961,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         p_type: esImagen(file) ? "image" : "file",
         p_url: subido.url,
       });
-      if (error) return error.message;
+      if (error) {
+        const m = error.message.toLowerCase();
+        if (m.includes("could not choose") || m.includes("does not exist") || m.includes("not find the function")) {
+          return "Falta aplicar ARREGLO-ADJUNTOS.sql en Supabase (la función de evidencias quedó duplicada).";
+        }
+        return error.message;
+      }
 
       const t = stateRef.current.tasks.find((x) => x.id === taskId);
       if (t) {

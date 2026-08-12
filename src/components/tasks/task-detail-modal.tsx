@@ -654,7 +654,8 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
               </button>
               <input
                 className="input flex-1"
-                placeholder="Escribe un mensaje..."
+                placeholder={subiendo ? "Enviando..." : "Escribe un mensaje..."}
+                disabled={subiendo}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
               />
@@ -662,7 +663,15 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                 {subiendo ? <Hourglass className="h-4 w-4 animate-pulse" /> : <Send className="h-4 w-4" />}
               </button>
             </form>
-            {aviso && <p className="mt-2 text-xs font-medium text-rose-600">{aviso}</p>}
+            {aviso && (
+              <div className="mt-2 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span className="flex-1">{aviso}</span>
+                <button onClick={() => setAviso("")} aria-label="Cerrar aviso">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
           </div>
           )}
           {canWrite && (
