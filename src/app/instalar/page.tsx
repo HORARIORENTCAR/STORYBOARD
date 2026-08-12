@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowLeft,
   Check,
   CheckCircle2,
@@ -10,16 +11,23 @@ import {
   Download,
   Info,
   Monitor,
+  RefreshCw,
   Smartphone,
   Sparkles,
+  Stethoscope,
+  XCircle,
 } from "lucide-react";
 import {
   detectarPlataforma,
+  diagnosticar,
+  diagnosticoATexto,
   lanzarInstalacion,
   pasosManuales,
   promptDisponible,
   yaEstaInstalada,
+  VERSION_APP,
   type Plataforma,
+  type Revision,
   type Sistema,
 } from "@/lib/instalacion";
 
@@ -37,6 +45,9 @@ export default function InstalarPage() {
   const [aviso, setAviso] = useState("");
   const [copiado, setCopiado] = useState(false);
   const [direccion, setDireccion] = useState("");
+  const [revisiones, setRevisiones] = useState<Revision[] | null>(null);
+  const [revisando, setRevisando] = useState(false);
+  const [copiadoDiag, setCopiadoDiag] = useState(false);
 
   const revisar = useCallback(() => {
     setHayPrompt(Boolean(promptDisponible()));
@@ -73,6 +84,27 @@ export default function InstalarPage() {
     }
     setHayPrompt(Boolean(promptDisponible()));
     setAviso("No se completó la instalación. Puedes intentarlo de nuevo o seguir los pasos de abajo.");
+  }
+
+  async function revisarTodo() {
+    setRevisando(true);
+    setCopiadoDiag(false);
+    try {
+      setRevisiones(await diagnosticar());
+    } finally {
+      setRevisando(false);
+    }
+  }
+
+  async function copiarDiagnostico() {
+    if (!revisiones) return;
+    try {
+      await navigator.clipboard.writeText(diagnosticoATexto(revisiones));
+      setCopiadoDiag(true);
+      window.setTimeout(() => setCopiadoDiag(false), 2500);
+    } catch {
+      setAviso("No se pudo copiar el diagnóstico. Toma una captura de pantalla.");
+    }
   }
 
   async function copiarDireccion() {
@@ -195,11 +227,65 @@ export default function InstalarPage() {
               </button>
             </div>
 
+            <div className="my-6 h-px bg-ink-100" />
+
+            <p className="section-eyebrow">¿No aparece la opción de instalar?</p>
+            <p className="mt-1 text-sm text-ink-600">
+              Esta revisión comprueba, aquí mismo en tu equipo, todo lo que el navegador necesita
+              para poder instalar la app, y te dice en español qué falta.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button onClick={revisarTodo} disabled={revisando} className="btn-secondary !py-2 !text-sm">
+                {revisando ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Stethoscope className="h-4 w-4" />}
+                {revisando ? "Revisando..." : "Revisar mi equipo"}
+              </button>
+              {revisiones && (
+                <button onClick={copiarDiagnostico} className="btn-ghost !py-2 !text-sm">
+                  {copiadoDiag ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copiadoDiag ? "¡Copiado!" : "Copiar el resultado"}
+                </button>
+              )}
+            </div>
+
+            {revisiones && (
+              <ul className="mt-4 space-y-2">
+                {revisiones.map((r, i) => (
+                  <li
+                    key={i}
+                    className={
+                      "flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 " +
+                      (r.estado === "bien"
+                        ? "border-brand-200 bg-brand-50"
+                        : r.estado === "aviso"
+                          ? "border-amber-200 bg-amber-50"
+                          : "border-rose-200 bg-rose-50")
+                    }
+                  >
+                    {r.estado === "bien" ? (
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" />
+                    ) : r.estado === "aviso" ? (
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                    ) : (
+                      <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-ink-900">{r.nombre}</p>
+                      <p className="mt-0.5 break-words text-xs leading-relaxed text-ink-600">{r.detalle}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
             <div className="mt-6 rounded-xl bg-ink-50 px-4 py-3.5">
               <p className="text-xs font-semibold text-ink-800">Tres cosas que conviene saber</p>
               <ul className="mt-2 space-y-1.5 text-xs leading-relaxed text-ink-600">
+                <li>
+                  · <strong className="text-ink-800">Instalar es opcional.</strong> Aunque no la
+                  instales, puedes entrar con tu correo y contraseña desde cualquier navegador. La app
+                  funciona igual; instalarla solo te ahorra escribir la dirección.
+                </li>
                 <li>· No está en Google Play ni en la App Store, y no hace falta: se instala desde aquí.</li>
-                <li>· Entras con tu correo institucional y la contraseña que te dio el administrador.</li>
                 <li>· Puedes instalarla en el celular y en la computadora a la vez, con la misma cuenta.</li>
               </ul>
             </div>
@@ -207,6 +293,10 @@ export default function InstalarPage() {
             <Link href="/login" className="btn-primary mt-6 w-full">
               Ir a iniciar sesión
             </Link>
+
+            <p className="mt-4 text-center font-mono text-[11px] text-ink-400">
+              Versión {VERSION_APP}
+            </p>
           </div>
         </div>
       </div>
