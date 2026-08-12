@@ -210,7 +210,13 @@ interface AppContextValue extends StoredState {
   liveTasks: EventTask[];
   runArchiveSweep: () => Promise<number>;
   runDeadlineAlerts: () => Promise<number>;
-  notify: (title: string, detail: string, audience?: "all" | string[]) => Promise<void>;
+  /**
+   * Envía un aviso.
+   *  "all"    = todo el personal
+   *  "admins" = solo los administradores
+   *  array    = solo esas personas
+   */
+  notify: (title: string, detail: string, audience?: "all" | "admins" | string[]) => Promise<void>;
   setExecStatus: (taskId: string, status: TaskExecStatus) => Promise<string | void>;
   addChatMessage: (taskId: string, text: string, adjuntos?: File[]) => Promise<string | void>;
   /** Vuelve a traer la conversación de una tarea (al abrirla o tras inscribirse). */
@@ -458,9 +464,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const notify: AppContextValue["notify"] = useCallback(async (title, detail, audience = "all") => {
     if (!supabase) return;
-    const dest = audience === "all" ? [] : Array.from(new Set(audience)).filter((id) => id && id !== stateRef.current.currentUserId);
-    if (audience !== "all" && dest.length === 0) return;
-    await supabase.rpc("notify", { p_title: title, p_detail: detail, p_audience_all: audience === "all", p_audience_users: dest });
+
+    const paraTodos = audience === "all";
+    let destinatarios: string[] = [];
+
+    if (audience === "admins") {
+      destinatarios = stateRef.current.users.filter((u) => u.role === "admin").map((u) => u.id);
+    } else if (Array.isArray(audience)) {
+      destinatarios = audience;
+    }
+
+    // A uno mismo no se le avisa de lo que acaba de hacer.
+    const dest = Array.from(new Set(destinatarios)).filter((id) => id && id !== stateRef.current.currentUserId);
+    if (!paraTodos && dest.length === 0) return;
+
+    await supabase.rpc("notify", {
+      p_title: title,
+      p_detail: detail,
+      p_audience_all: paraTodos,
+      p_audience_users: dest,
+    });
   }, []);
 
   const liveTasks = useMemo(() => state.tasks.filter((t) => !t.archived), [state.tasks]);
@@ -471,8 +494,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (target.length === 0) return 0;
     await supabase.from("event_tasks").update({ archived: true }).in("id", target.map((t) => t.id));
     logHistory("archivó automáticamente", `${target.length} tarea(s) vencida(s)`, "Configuración");
+    await notify(
+      "Mantenimiento automático",
+      `Se archivaron ${target.length} tarea(s) vencida(s) según la regla de la institución`,
+      "admins"
+    );
     return target.length;
-  }, [state.tasks, state.settings.archiveAfterDays, logHistory]);
+  }, [state.tasks, state.settings.archiveAfterDays, logHistory, notify]);
 
   const runDeadlineAlerts: AppContextValue["runDeadlineAlerts"] = useCallback(async () => {
     if (!supabase || !state.settings.notifyDeadline) return 0;
@@ -550,9 +578,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await supabase.from("events").update(dbPatch).eq("id", id);
       if (patch.status && patch.status !== prevEvent?.status) {
         logHistory(patch.status === "publicado" ? "publicó el evento" : "cambió el estado de", prevEvent?.name ?? "", "Evento");
-        if (patch.status === "publicado") await notify("Nuevo evento publicado", `${currentUser?.name ?? "Alguien"} publicó ${prevEvent?.name ?? ""}`, "all");
+        const nombreEv = prevEvent?.name ?? "";
+        if (patch.status === "publicado") {
+          await notify("Nuevo evento publicado", `currentUser?.name ?? "Alguien" publicó ${nombreEv}. Ya puedes inscribirte en sus tareas.`, "all");
+        } else if (patch.status === "finalizado") {
+          await notify("Evento finalizado", `${nombreEv} se dio por terminado.`, "all");
+        } else if (patch.status === "archivado") {
+          await notify("Evento archivado", `${nombreEv} pasó al archivo.`, "admins");
+        }
       } else {
         logHistory("editó el evento", prevEvent?.name ?? "", "Evento");
+        // La especificación pide avisar cuando se mueve una fecha importante.
+        const cambioFecha =
+          (patch.eventDate !== undefined && patch.eventDate !== prevEvent?.eventDate) ||
+          (patch.dueDate !== undefined && patch.dueDate !== prevEvent?.dueDate);
+        if (cambioFecha && prevEvent?.status === "publicado") {
+          await notify(
+            "Cambió una fecha importante",
+            `${prevEvent?.name}: ahora es el ${patch.eventDate ?? prevEvent?.eventDate}`,
+            "all"
+          );
+        }
       }
     },
     [state.events, logHistory, notify, currentUser]
@@ -563,7 +609,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (!supabase) return;
       const event = state.events.find((e) => e.id === id);
       await supabase.from("events").delete().eq("id", id);
-      if (event) logHistory("eliminó el evento", event.name, "Evento");
+      if (event) {
+        logHistory("eliminó el evento", event.name, "Evento");
+        await notify(
+          "Evento eliminado",
+          `currentUser?.name ?? "Alguien" eliminó ${event.name}`,
+          event.status === "publicado" ? "all" : "admins"
+        );
+      }
     },
     [state.events, logHistory]
   );
@@ -643,6 +696,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .single();
       if (error || !row) return null;
       logHistory("creó la tarea", row.name, "Tarea");
+      // Si el evento ya está publicado, hay cupos nuevos para todo el personal.
+      const evento = stateRef.current.events.find((e) => e.id === data.eventId);
+      if (evento?.status === "publicado") {
+        await notify(
+          "Nueva tarea disponible",
+          `${row.name} en ${evento.name} · ${max} lugar(es) para colaborar`,
+          "all"
+        );
+      }
       return mapTask(row, []);
     },
     [logHistory]
@@ -690,17 +752,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   );
 
   /* ----- acciones sensibles a condiciones de carrera: pasan por RPC ----- */
-  const claimSlot: AppContextValue["claimSlot"] = useCallback(async (taskId, slotIndex) => {
-    if (!supabase) return "Supabase no está configurado";
-    const { error } = await supabase.rpc("claim_slot", { p_task_id: taskId, p_slot_index: slotIndex });
-    if (error) return error.message;
-  }, []);
+  const claimSlot: AppContextValue["claimSlot"] = useCallback(
+    async (taskId, slotIndex) => {
+      if (!supabase) return "Supabase no está configurado";
+      const { error } = await supabase.rpc("claim_slot", { p_task_id: taskId, p_slot_index: slotIndex });
+      if (error) return error.message;
 
-  const cancelSlot: AppContextValue["cancelSlot"] = useCallback(async (taskId) => {
-    if (!supabase) return "Supabase no está configurado";
-    const { error } = await supabase.rpc("cancel_slot", { p_task_id: taskId });
-    if (error) return error.message;
-  }, []);
+      // Quien organiza el evento debe enterarse de que ya hay quien ayude.
+      const t = stateRef.current.tasks.find((x) => x.id === taskId);
+      const ev = stateRef.current.events.find((e) => e.id === t?.eventId);
+      const avisar = [ev?.createdBy, t?.leaderId].filter((x): x is string => !!x);
+      if (t && avisar.length > 0) {
+        await notify(
+          "Alguien se inscribió",
+          `${currentUser?.name ?? "Un colaborador"} se inscribió en ${t.name}`,
+          avisar
+        );
+      }
+    },
+    [notify, currentUser]
+  );
+
+  const cancelSlot: AppContextValue["cancelSlot"] = useCallback(
+    async (taskId) => {
+      if (!supabase) return "Supabase no está configurado";
+      const t = stateRef.current.tasks.find((x) => x.id === taskId);
+      const { error } = await supabase.rpc("cancel_slot", { p_task_id: taskId });
+      if (error) return error.message;
+
+      const ev = stateRef.current.events.find((e) => e.id === t?.eventId);
+      const avisar = [ev?.createdBy, t?.leaderId].filter((x): x is string => !!x);
+      if (t && avisar.length > 0) {
+        await notify(
+          "Se liberó un lugar",
+          `${currentUser?.name ?? "Un colaborador"} canceló su inscripción en ${t.name}`,
+          avisar
+        );
+      }
+    },
+    [notify, currentUser]
+  );
 
   const joinWaitlist: AppContextValue["joinWaitlist"] = useCallback(async (taskId) => {
     if (!supabase) return "Supabase no está configurado";
@@ -828,8 +919,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         p_url: subido.url,
       });
       if (error) return error.message;
+
+      const t = stateRef.current.tasks.find((x) => x.id === taskId);
+      if (t) {
+        await notify(
+          "Nueva evidencia",
+          `${currentUser?.name ?? "Alguien"} subió "${subido.name}" en ${t.name}`,
+          taskAudience(t)
+        );
+      }
     },
-    [uploadFile]
+    [uploadFile, notify, currentUser, taskAudience]
   );
 
   const removeEvidence: AppContextValue["removeEvidence"] = useCallback(async (taskId, itemId) => {
@@ -866,8 +966,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       });
       logHistory("actualizó el mural del mes", mes, "Calendario");
+      await notify("Mural del mes actualizado", `currentUser?.name ?? "Alguien" escribió en el mural de ${mes}`, "all");
     },
-    [logHistory]
+    [logHistory, notify, currentUser]
   );
 
   const addCalendarEntry: AppContextValue["addCalendarEntry"] = useCallback(
@@ -963,8 +1064,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await supabase.from("institution_settings").update(dbPatch).eq("id", true);
       setState((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
       logHistory("actualizó la configuración institucional", state.settings.name, "Configuración");
+
+      if (patch.officialCalendarUrl) {
+        // El calendario oficial le interesa a todo el personal.
+        await notify(
+          "Calendario oficial actualizado",
+          `currentUser?.name ?? "Alguien" subió el calendario oficial del colegio`,
+          "all"
+        );
+      } else if (patch.officialCalendarUrl === "") {
+        await notify("Calendario oficial", `currentUser?.name ?? "Alguien" quitó el calendario oficial`, "admins");
+      } else {
+        await notify("Configuración institucional", `currentUser?.name ?? "Alguien" cambió los ajustes de la plataforma`, "admins");
+      }
     },
-    [state.settings, logHistory]
+    [state.settings, logHistory, notify, currentUser]
   );
 
   /** Invita a alguien nuevo: pasa por /api/invite (usa la llave de servicio). */
@@ -984,6 +1098,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const body = await res.json();
       if (!res.ok) return { error: body.error ?? "No se pudo crear la cuenta." };
       logHistory("agregó al colaborador", data.name, "Equipo");
+      await notify("Nueva persona en el equipo", `currentUser?.name ?? "Alguien" agregó a ${data.name} (${data.email})`, "admins");
       await recargarPersonal();
       return { credenciales: { nombre: data.name, email: body.email, password: body.password } };
     },
@@ -1054,7 +1169,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       objetivo.name,
       "Equipo"
     );
-  }, [logHistory]);
+    await notify(
+      role === "admin" ? "Nuevo administrador" : "Cambio de rol",
+      `${objetivo.name} ahora es ${role === "admin" ? "administrador" : "miembro del equipo"}`,
+      "admins"
+    );
+    await notify(
+      "Tu rol cambió",
+      `Ahora eres ${role === "admin" ? "administrador" : "miembro del equipo"} en Staff Board`,
+      [id]
+    );
+  }, [logHistory, notify]);
 
   /** Cada quien edita su propia ficha; se guarda de verdad en la base de datos. */
   const updateProfile: AppContextValue["updateProfile"] = useCallback(
@@ -1082,6 +1207,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   /** Saca a alguien del equipo. Las protecciones reales viven en /api/remove-user. */
   const removeUser: AppContextValue["removeUser"] = useCallback(
     async (id) => {
+      const persona = stateRef.current.users.find((u) => u.id === id);
       const res = await fetch("/api/remove-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1094,9 +1220,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await recargarPersonal();
 
       if (!res.ok) return body.error ?? "No se pudo eliminar a esa persona.";
+      await notify("Persona eliminada del equipo", `currentUser?.name ?? "Alguien" eliminó a ${persona?.name ?? "un colaborador"}`, "admins");
       if (body.aviso) return body.aviso;
     },
-    [recargarPersonal]
+    [recargarPersonal, notify, currentUser]
   );
 
   /** Reenvía el correo para que la persona cree (o recupere) su contraseña. */
