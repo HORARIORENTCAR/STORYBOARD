@@ -86,9 +86,12 @@ export function PwaSetup() {
     const { plataforma } = detectarPlataforma();
     const ios = plataforma === "ios-safari";
     const listo = Boolean(promptDisponible());
+    /* En el celular mostramos el aviso aunque el navegador no haya ofrecido nada:
+       siempre queda el enlace "Ver los pasos", que sí funciona en cualquier caso. */
+    const movil = ios || plataforma === "ios-otro" || plataforma === "android-chrome";
     setEsIos(ios);
     setHayPrompt(listo);
-    setVisible(ios || listo);
+    setVisible(movil || listo);
   }, []);
 
   useEffect(() => {

@@ -190,18 +190,24 @@ export default function InstalarPage() {
               </div>
             )}
 
-            {instalada ? (
-              <div className="flex items-start gap-3 rounded-2xl border-2 border-brand-500 bg-brand-50 p-5">
+            {/* Aunque creamos que ya está instalada, NUNCA escondemos los pasos.
+                Si la detección se equivoca, la persona se queda sin nada que
+                pulsar, y eso es peor que mostrar un paso de más. */}
+            {instalada && (
+              <div className="mb-6 flex items-start gap-3 rounded-2xl border-2 border-brand-500 bg-brand-50 p-5">
                 <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-brand-700" />
                 <div>
-                  <p className="text-base font-bold text-brand-900">Ya la tienes instalada</p>
+                  <p className="text-base font-bold text-brand-900">Parece que ya la tienes instalada</p>
                   <p className="mt-1 text-sm text-brand-800">
-                    Busca el ícono de Staff Board entre tus aplicaciones y ábrelo desde ahí. Si no lo
-                    encuentras, revisa la lista completa de apps de tu {sistema}.
+                    Busca el ícono de Staff Board entre tus aplicaciones y ábrelo desde ahí. Si no
+                    aparece por ningún lado, no le hagas caso a este aviso y sigue los pasos de abajo
+                    para instalarla.
                   </p>
                 </div>
               </div>
-            ) : (
+            )}
+
+            {
               <>
                 <div className="mb-5 flex items-center gap-2 rounded-xl bg-ink-50 px-4 py-2.5 text-xs font-medium text-ink-600">
                   <Icono className="h-4 w-4 text-ink-500" />
@@ -253,7 +259,7 @@ export default function InstalarPage() {
 
                 {aviso && <p className="mt-4 text-xs font-medium text-rose-600">{aviso}</p>}
               </>
-            )}
+            }
 
             <div className="my-6 h-px bg-ink-100" />
 

@@ -7,7 +7,7 @@
 /* Marca de esta versión del código. Sirve para saber, de un vistazo, si lo que
    está publicado en internet es realmente lo último que subimos a GitHub.
    Si la página /instalar no muestra exactamente esta marca, el despliegue no llegó. */
-export const VERSION_APP = "2026.08.12-revision";
+export const VERSION_APP = "2026.08.12-deteccion";
 
 export type EventoInstalacion = Event & {
   prompt: () => Promise<void>;
@@ -104,15 +104,35 @@ export function navegadorIncrustado(): { dentro: boolean; app: string } {
   return { dentro: false, app: "" };
 }
 
-/** ¿La persona ya está usando la app instalada (no dentro del navegador)? */
+/** Qué modo de presentación reporta el navegador. Solo para el diagnóstico. */
+export function modoPresentacion(): string {
+  if (typeof window === "undefined") return "desconocido";
+  for (const m of ["standalone", "fullscreen", "minimal-ui", "browser"]) {
+    if (window.matchMedia?.(`(display-mode: ${m})`).matches) return m;
+  }
+  return "desconocido";
+}
+
+/**
+ * ¿La persona ya está usando la app instalada, en su propia ventana?
+ *
+ * OJO con `minimal-ui`: aquí estaba el error. Chrome en Android responde que sí
+ * a `(display-mode: minimal-ui)` en una pestaña normal y corriente, así que la
+ * app se creía instalada cuando no lo estaba, escondía el botón y los pasos, y
+ * dejaba a la persona sin nada que pulsar.
+ *
+ * Nuestro manifiesto declara `standalone`, así que una app instalada SIEMPRE se
+ * presenta como `standalone` (o `fullscreen`). Esos son los únicos modos válidos
+ * para dar por instalada la aplicación.
+ */
 export function yaEstaInstalada(): boolean {
   if (typeof window === "undefined") return false;
   const modo =
     window.matchMedia?.("(display-mode: standalone)").matches ||
-    window.matchMedia?.("(display-mode: fullscreen)").matches ||
-    window.matchMedia?.("(display-mode: minimal-ui)").matches;
+    window.matchMedia?.("(display-mode: fullscreen)").matches;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const iosStandalone = (window.navigator as any).standalone === true;
+  // `__sbInstalada` solo lo pone el evento `appinstalled`, que es un hecho, no una suposición.
   return Boolean(modo || iosStandalone || window.__sbInstalada);
 }
 
@@ -259,7 +279,7 @@ export async function diagnosticar(): Promise<Revision[]> {
   out.push({
     nombre: "Equipo detectado",
     estado: "bien",
-    detalle: `${sistema} · ${navegador}`,
+    detalle: `${sistema} · ${navegador} · modo "${modoPresentacion()}"`,
   });
 
   const incrustado = navegadorIncrustado();
