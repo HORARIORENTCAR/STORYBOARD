@@ -8,6 +8,7 @@ import {
   ChatMessage,
   EventTask,
   HistoryEntry,
+  MonthNote,
   SchoolEvent,
   StaffUser,
   TaskExecStatus,
@@ -51,6 +52,7 @@ interface StoredState {
   events: SchoolEvent[];
   tasks: EventTask[];
   calendar: CalendarEntry[];
+  monthNotes: MonthNote[];
   history: HistoryEntry[];
   notifications: AppNotification[];
   settings: InstitutionSettings;
@@ -66,6 +68,7 @@ const emptyState: StoredState = {
   events: [],
   tasks: [],
   calendar: [],
+  monthNotes: [],
   history: [],
   notifications: [],
   settings: defaultSettings,
@@ -153,6 +156,10 @@ function mapNotification(r: any, readIds: Set<string>): AppNotification {
     audience: r.audience_all ? "all" : (r.audience_users ?? []),
   };
 }
+function mapMonthNote(r: any): MonthNote {
+  return { month: r.month, content: r.content ?? "", updatedAt: r.updated_at, updatedBy: r.updated_by ?? undefined };
+}
+
 function mapCalendar(r: any): CalendarEntry {
   return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined, description: r.description ?? undefined, responsibles: r.responsibles ?? undefined, customKind: r.custom_kind ?? undefined };
 }
@@ -213,6 +220,9 @@ interface AppContextValue extends StoredState {
   uploadFile: (file: File, carpeta: string) => Promise<{ url: string; name: string } | string>;
   addEvidence: (taskId: string, file: File) => Promise<string | void>;
   removeEvidence: (taskId: string, itemId: string) => Promise<string | void>;
+  /** Nota del mural de un mes ("AAAA-MM"). */
+  monthNote: (mes: string) => MonthNote | undefined;
+  saveMonthNote: (mes: string, contenido: string) => Promise<string | void>;
   addCalendarEntry: (entry: Omit<CalendarEntry, "id">) => Promise<void>;
   updateCalendarEntry: (id: string, patch: Partial<Omit<CalendarEntry, "id">>) => Promise<void>;
   removeCalendarEntry: (id: string) => Promise<void>;
@@ -248,7 +258,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   /** Carga todo lo visible para la sesión actual (RLS decide qué llega). */
   const loadAll = useCallback(async (userId: string) => {
     if (!supabase) return;
-    const [profilesR, eventsR, tasksR, chatR, notifR, readsR, calR, histR, settingsR] = await Promise.all([
+    const [profilesR, eventsR, tasksR, chatR, notifR, readsR, calR, muralR, histR, settingsR] = await Promise.all([
       supabase.from("profiles").select("*"),
       supabase.from("events").select("*").order("created_at", { ascending: false }),
       supabase.from("event_tasks").select("*"),
@@ -256,6 +266,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       supabase.from("notifications").select("*").order("created_at", { ascending: false }),
       supabase.from("notification_reads").select("notification_id").eq("user_id", userId),
       supabase.from("calendar_entries").select("*").order("date", { ascending: true }),
+      supabase.from("month_notes").select("*"),
       supabase.from("history_log").select("*").order("created_at", { ascending: false }).limit(500),
       supabase.from("institution_settings").select("*").single(),
     ]);
@@ -283,6 +294,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       events,
       tasks,
       calendar: (calR.data ?? []).map(mapCalendar),
+      monthNotes: (muralR.data ?? []).map(mapMonthNote),
       history: (histR.data ?? []).map(mapHistory),
       notifications: (notifR.data ?? []).map((r) => mapNotification(r, readIds)),
       settings: settingsR.data ? mapSettings(settingsR.data) : defaultSettings,
@@ -383,6 +395,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const row = deleted ? payload.old : payload.new;
           if (!row?.id) return prev;
           return { ...prev, users: upsert(prev.users, mapProfile(row), deleted) };
+        });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "month_notes" }, (payload: any) => {
+        setState((prev) => {
+          const deleted = payload.eventType === "DELETE";
+          const row = deleted ? payload.old : payload.new;
+          if (!row?.month) return prev;
+          const resto = prev.monthNotes.filter((n) => n.month !== row.month);
+          return { ...prev, monthNotes: deleted ? resto : [...resto, mapMonthNote(row)] };
         });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "calendar_entries" }, (payload: any) => {
@@ -817,6 +838,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (error) return error.message;
   }, []);
 
+  const monthNote: AppContextValue["monthNote"] = useCallback(
+    (mes) => state.monthNotes.find((n) => n.month === mes),
+    [state.monthNotes]
+  );
+
+  const saveMonthNote: AppContextValue["saveMonthNote"] = useCallback(
+    async (mes, contenido) => {
+      if (!supabase) return "Supabase no está configurado";
+      const fila = {
+        month: mes,
+        content: contenido,
+        updated_at: new Date().toISOString(),
+        updated_by: stateRef.current.currentUserId || null,
+      };
+      const { error } = await supabase.from("month_notes").upsert(fila, { onConflict: "month" });
+      if (error) {
+        return error.message.toLowerCase().includes("month_notes")
+          ? "Falta aplicar el SQL del mural del mes en Supabase."
+          : error.message;
+      }
+      setState((prev) => {
+        const resto = prev.monthNotes.filter((n) => n.month !== mes);
+        return {
+          ...prev,
+          monthNotes: [...resto, mapMonthNote(fila)],
+        };
+      });
+      logHistory("actualizó el mural del mes", mes, "Calendario");
+    },
+    [logHistory]
+  );
+
   const addCalendarEntry: AppContextValue["addCalendarEntry"] = useCallback(
     async (entry) => {
       if (!supabase) return;
@@ -1194,6 +1247,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     uploadFile,
     addEvidence,
     removeEvidence,
+    monthNote,
+    saveMonthNote,
     addCalendarEntry,
     updateCalendarEntry,
     removeCalendarEntry,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Download, Sprout, Trash2, Upload, FileText, X, Pencil } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Download, Sprout, Trash2, Upload, FileText, X, Pencil, StickyNote } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { useApp } from "@/lib/store";
@@ -47,11 +47,15 @@ function buildMonthGrid(year: number, month: number) {
 }
 
 export default function CalendarioPage() {
-  const { calendar, addCalendarEntry, removeCalendarEntry, isAdmin, settings, updateSettings, uploadFile, updateCalendarEntry } = useApp();
+  const { calendar, addCalendarEntry, removeCalendarEntry, isAdmin, settings, updateSettings, uploadFile, updateCalendarEntry, monthNote, saveMonthNote, userById } = useApp();
   const ahora = new Date();
   const [cursor, setCursor] = useState(new Date(ahora.getFullYear(), ahora.getMonth(), 1));
   const [createOpen, setCreateOpen] = useState(false);
   const [detalle, setDetalle] = useState<CalendarEntry | null>(null);
+  const [muralAbierto, setMuralAbierto] = useState(false);
+  const [muralTexto, setMuralTexto] = useState("");
+  const [muralEditando, setMuralEditando] = useState(false);
+  const [muralAviso, setMuralAviso] = useState("");
   const [editandoValor, setEditandoValor] = useState(false);
   const [editandoFecha, setEditandoFecha] = useState(false);
   const [borrador, setBorrador] = useState({
@@ -101,6 +105,7 @@ export default function CalendarioPage() {
 
   const prefijoMes = `${year}-${String(month + 1).padStart(2, "0")}`;
   const valorDelMes = calendar.find((c) => c.kind === "valor" && c.date.startsWith(prefijoMes));
+  const mural = monthNote(prefijoMes);
 
   /** Descarga el calendario institucional como archivo CSV (se abre en Excel). */
   function exportarCalendario() {
@@ -218,13 +223,49 @@ export default function CalendarioPage() {
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
+            {/* Mural del mes: cada mes conserva sus propias notas */}
+            <button
+              onClick={() => {
+                setMuralTexto(mural?.content ?? "");
+                setMuralEditando(false);
+                setMuralAviso("");
+                setMuralAbierto(true);
+              }}
+              title={mural?.content || "Notas de este mes"}
+              className={cx(
+                "mx-3 hidden min-w-0 flex-1 items-center gap-2 rounded-xl border px-3.5 py-2 text-left transition-colors sm:flex",
+                mural?.content
+                  ? "border-amber-200 bg-amber-50 hover:bg-amber-100"
+                  : "border-dashed border-ink-300 hover:border-brand-400 hover:bg-brand-50/40"
+              )}
+            >
+              <StickyNote className={cx("h-4 w-4 shrink-0", mural?.content ? "text-amber-700" : "text-ink-400")} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+                  Mural de {monthLabel}
+                </span>
+                <span
+                  className={cx(
+                    "block truncate text-sm",
+                    mural?.content ? "text-amber-900" : "text-ink-400"
+                  )}
+                >
+                  {mural?.content
+                    ? mural.content.replace(/\s+/g, " ")
+                    : isAdmin
+                    ? "Escribe aquí lo importante de este mes"
+                    : "Sin notas este mes"}
+                </span>
+              </span>
+            </button>
+
             {isAdmin && (
               <button
                 onClick={() => {
                   setSelectedDate(null);
                   setCreateOpen(true);
                 }}
-                className="btn-primary"
+                className="btn-primary shrink-0"
               >
                 <Plus className="h-4 w-4" /> Nueva fecha
               </button>
@@ -643,6 +684,97 @@ export default function CalendarioPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        open={muralAbierto}
+        onClose={() => {
+          setMuralAbierto(false);
+          setMuralEditando(false);
+        }}
+        eyebrow="Calendario institucional"
+        title={`Mural de ${monthLabel}`}
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="-mt-2 text-xs text-ink-400">
+            Lo que escribas aquí queda guardado solo para este mes. Al cambiar de mes verás el mural
+            correspondiente, y los anteriores se conservan para consulta.
+          </p>
+
+          {muralEditando ? (
+            <>
+              <textarea
+                rows={10}
+                autoFocus
+                className="input min-h-[220px] resize-y"
+                placeholder="Recordatorios, acuerdos de la reunión, pendientes del mes, avisos para todo el personal..."
+                value={muralTexto}
+                onChange={(e) => setMuralTexto(e.target.value)}
+              />
+              {muralAviso && <p className="text-xs font-medium text-rose-600">{muralAviso}</p>}
+              <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
+                <button
+                  onClick={() => {
+                    setMuralTexto(mural?.content ?? "");
+                    setMuralEditando(false);
+                    setMuralAviso("");
+                  }}
+                  className="btn-secondary"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={async () => {
+                    const err = await saveMonthNote(prefijoMes, muralTexto);
+                    if (err) {
+                      setMuralAviso(err);
+                      return;
+                    }
+                    setMuralEditando(false);
+                  }}
+                  className="btn-primary"
+                >
+                  Guardar
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {mural?.content ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-amber-900">{mural.content}</p>
+                  {mural.updatedBy && (
+                    <p className="mt-3 border-t border-amber-200 pt-2 text-xs text-amber-700">
+                      Última actualización: {userById(mural.updatedBy)?.name ?? "alguien del equipo"}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="rounded-xl border border-dashed border-ink-300 px-4 py-8 text-center text-sm text-ink-400">
+                  Este mes todavía no tiene notas.
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2 border-t border-ink-100 pt-4">
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setMuralTexto(mural?.content ?? "");
+                      setMuralEditando(true);
+                    }}
+                    className="btn-secondary"
+                  >
+                    <Pencil className="h-4 w-4" /> {mural?.content ? "Editar" : "Escribir"}
+                  </button>
+                )}
+                <button onClick={() => setMuralAbierto(false)} className="btn-primary">
+                  Cerrar
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
 
       <NewEntryModal

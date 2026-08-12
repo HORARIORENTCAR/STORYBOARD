@@ -122,3 +122,11 @@ export interface AppNotification {
   /** "all" = toda la institución · array = solo esas personas */
   audience: "all" | string[];
 }
+
+/** Nota del mural correspondiente a un mes ("AAAA-MM"). */
+export interface MonthNote {
+  month: string;
+  content: string;
+  updatedAt: string;
+  updatedBy?: string;
+}
