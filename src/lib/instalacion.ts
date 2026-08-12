@@ -7,7 +7,7 @@
 /* Marca de esta versión del código. Sirve para saber, de un vistazo, si lo que
    está publicado en internet es realmente lo último que subimos a GitHub.
    Si la página /instalar no muestra exactamente esta marca, el despliegue no llegó. */
-export const VERSION_APP = "2026.08.12-instalacion-b";
+export const VERSION_APP = "2026.08.12-whatsapp";
 
 export type EventoInstalacion = Event & {
   prompt: () => Promise<void>;
@@ -72,6 +72,36 @@ export function detectarPlataforma(): { plataforma: Plataforma; sistema: Sistema
   if (esFirefox) return { plataforma: "escritorio-firefox", sistema, navegador };
   if (esSafari) return { plataforma: "escritorio-safari", sistema, navegador };
   return { plataforma: "escritorio-chromium", sistema, navegador };
+}
+
+/* ------------------------------------------------------------------ */
+/* Navegadores incrustados (WhatsApp, Facebook, Instagram...)           */
+/*                                                                      */
+/* Cuando alguien toca un enlace dentro de WhatsApp, la página NO se    */
+/* abre en Chrome ni en Safari: se abre en un mini navegador que vive   */
+/* dentro de WhatsApp. Ese mini navegador no puede instalar nada ni     */
+/* añadir iconos a la pantalla de inicio. Es la causa más común de que  */
+/* "la app no se instala" cuando el enlace se repartió por WhatsApp.    */
+/* ------------------------------------------------------------------ */
+
+export function navegadorIncrustado(): { dentro: boolean; app: string } {
+  if (typeof window === "undefined") return { dentro: false, app: "" };
+  const ua = window.navigator.userAgent;
+
+  if (/FBAN|FBAV|FB_IAB/i.test(ua)) return { dentro: true, app: "Facebook" };
+  if (/Instagram/i.test(ua)) return { dentro: true, app: "Instagram" };
+  if (/\bLine\//i.test(ua)) return { dentro: true, app: "LINE" };
+  if (/Snapchat/i.test(ua)) return { dentro: true, app: "Snapchat" };
+  if (/BytedanceWebview|musical_ly|TikTok/i.test(ua)) return { dentro: true, app: "TikTok" };
+
+  /* WhatsApp en Android usa el WebView del sistema: se delata por "; wv)"
+     junto con "Version/4.0". No dice su nombre, así que lo llamamos por lo
+     que es: el navegador interno de otra aplicación. */
+  if (/;\s*wv\)/i.test(ua) || (/Android/i.test(ua) && /Version\/\d+\.\d+/i.test(ua))) {
+    return { dentro: true, app: "otra aplicación (WhatsApp, Facebook o similar)" };
+  }
+
+  return { dentro: false, app: "" };
 }
 
 /** ¿La persona ya está usando la app instalada (no dentro del navegador)? */
@@ -230,6 +260,15 @@ export async function diagnosticar(): Promise<Revision[]> {
     nombre: "Equipo detectado",
     estado: "bien",
     detalle: `${sistema} · ${navegador}`,
+  });
+
+  const incrustado = navegadorIncrustado();
+  out.push({
+    nombre: "¿Navegador real o interno?",
+    estado: incrustado.dentro ? "mal" : "bien",
+    detalle: incrustado.dentro
+      ? `Estás dentro del navegador interno de ${incrustado.app}. Ese mini navegador no puede instalar aplicaciones. Abre esta dirección en Chrome o Safari.`
+      : "Estás en un navegador de verdad, que sí puede instalar.",
   });
 
   const seguro = window.isSecureContext || window.location.hostname === "localhost";

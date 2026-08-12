@@ -22,6 +22,7 @@ import {
   diagnosticar,
   diagnosticoATexto,
   lanzarInstalacion,
+  navegadorIncrustado,
   pasosManuales,
   promptDisponible,
   yaEstaInstalada,
@@ -45,6 +46,10 @@ export default function InstalarPage() {
   const [aviso, setAviso] = useState("");
   const [copiado, setCopiado] = useState(false);
   const [direccion, setDireccion] = useState("");
+  const [incrustado, setIncrustado] = useState<{ dentro: boolean; app: string }>({
+    dentro: false,
+    app: "",
+  });
   const [revisiones, setRevisiones] = useState<Revision[] | null>(null);
   const [revisando, setRevisando] = useState(false);
   const [copiadoDiag, setCopiadoDiag] = useState(false);
@@ -60,6 +65,7 @@ export default function InstalarPage() {
     setSistema(info.sistema);
     setNavegador(info.navegador);
     setDireccion(window.location.origin);
+    setIncrustado(navegadorIncrustado());
     revisar();
 
     window.addEventListener("sb-install-listo", revisar);
@@ -146,6 +152,44 @@ export default function InstalarPage() {
           </div>
 
           <div className="p-6 sm:p-8">
+            {incrustado.dentro && !instalada && (
+              <div className="mb-6 rounded-2xl border-2 border-rose-400 bg-rose-50 p-5">
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-rose-600" />
+                  <div className="min-w-0">
+                    <p className="text-base font-bold text-rose-900">
+                      Esta página se abrió dentro de {incrustado.app}
+                    </p>
+                    <p className="mt-1.5 text-sm leading-relaxed text-rose-800">
+                      Cuando tocas un enlace dentro de WhatsApp, la página no se abre en Chrome ni en
+                      Safari, sino en un mini navegador que vive dentro de esa aplicación.{" "}
+                      <strong>Ese mini navegador no puede instalar aplicaciones.</strong> Por eso no
+                      te aparece el ícono. No es culpa tuya ni del teléfono.
+                    </p>
+                    <p className="mt-3 text-sm font-semibold text-rose-900">Solución, en 10 segundos:</p>
+                    <ol className="mt-1.5 space-y-1 text-sm leading-relaxed text-rose-800">
+                      <li>
+                        1. Toca los tres puntos <strong>⋮</strong> arriba a la derecha de esta
+                        pantalla (o el botón <strong>Compartir</strong> si estás en iPhone).
+                      </li>
+                      <li>
+                        2. Elige <strong>«Abrir en el navegador»</strong>, «Abrir en Chrome» o
+                        «Abrir en Safari».
+                      </li>
+                      <li>3. Ya en el navegador de verdad, vuelve a esta página y sigue los pasos.</li>
+                    </ol>
+                    <button onClick={copiarDireccion} className="btn-primary mt-4 !py-2 !text-sm">
+                      {copiado ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                      {copiado ? "¡Dirección copiada!" : "Copiar la dirección"}
+                    </button>
+                    <p className="mt-2 text-xs text-rose-700">
+                      También puedes copiar la dirección y pegarla tú mismo en Chrome o Safari.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {instalada ? (
               <div className="flex items-start gap-3 rounded-2xl border-2 border-brand-500 bg-brand-50 p-5">
                 <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-brand-700" />
