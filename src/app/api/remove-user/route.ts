@@ -57,16 +57,27 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Por último la cuenta de acceso, para que el correo quede libre.
-    const { error: authErr } = await admin.auth.admin.deleteUser(userId);
-    if (authErr && !authErr.message.toLowerCase().includes("not found")) {
-      return NextResponse.json(
-        { error: `Se quitó del equipo, pero su cuenta de acceso sigue activa: ${authErr.message}` },
-        { status: 400 }
-      );
+    /* Por último la cuenta de acceso, para liberar el correo. Si esto falla,
+       la persona YA salió del equipo: no lo tratamos como error, solo avisamos.
+       Además, si el correo se vuelve a usar, /api/invite recupera la cuenta
+       huérfana automáticamente, así que no queda bloqueado. */
+    let aviso: string | undefined;
+    for (let intento = 1; intento <= 2; intento++) {
+      const { error: authErr } = await admin.auth.admin.deleteUser(userId);
+      if (!authErr || authErr.message.toLowerCase().includes("not found")) {
+        aviso = undefined;
+        break;
+      }
+      aviso = authErr.message;
+      if (intento === 1) await new Promise((r) => setTimeout(r, 600));
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      aviso: aviso
+        ? "La persona salió del equipo. Su cuenta de acceso quedó pendiente de borrar, pero ya no puede entrar y el correo podrá reutilizarse."
+        : undefined,
+    });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Error inesperado" }, { status: 500 });
   }

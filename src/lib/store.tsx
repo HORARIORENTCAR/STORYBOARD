@@ -377,6 +377,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         });
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, (payload: any) => {
+        setState((prev) => {
+          const deleted = payload.eventType === "DELETE";
+          const row = deleted ? payload.old : payload.new;
+          if (!row?.id) return prev;
+          return { ...prev, users: upsert(prev.users, mapProfile(row), deleted) };
+        });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "calendar_entries" }, (payload: any) => {
+        setState((prev) => {
+          const deleted = payload.eventType === "DELETE";
+          const row = deleted ? payload.old : payload.new;
+          if (!row?.id) return prev;
+          const calendar = upsert(prev.calendar, mapCalendar(row), deleted).sort((a, b) =>
+            a.date.localeCompare(b.date)
+          );
+          return { ...prev, calendar };
+        });
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, (payload: any) => {
         setState((prev) => {
           const deleted = payload.eventType === "DELETE";
@@ -1010,18 +1029,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   /** Saca a alguien del equipo. Las protecciones reales viven en /api/remove-user. */
   const removeUser: AppContextValue["removeUser"] = useCallback(
     async (id) => {
-      const person = stateRef.current.users.find((u) => u.id === id);
       const res = await fetch("/api/remove-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: id, requesterId: stateRef.current.currentUserId }),
       });
       const body = await res.json();
+
+      /* Siempre volvemos a leer el directorio: aunque algo falle a medias,
+         la pantalla debe reflejar lo que de verdad hay en la base. */
+      await recargarPersonal();
+
       if (!res.ok) return body.error ?? "No se pudo eliminar a esa persona.";
-      setState((prev) => ({ ...prev, users: prev.users.filter((u) => u.id !== id) }));
-      logHistory("eliminó del equipo a", person?.name ?? "", "Equipo");
+      if (body.aviso) return body.aviso;
     },
-    [logHistory]
+    [recargarPersonal]
   );
 
   /** Reenvía el correo para que la persona cree (o recupere) su contraseña. */
