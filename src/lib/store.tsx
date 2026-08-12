@@ -203,6 +203,8 @@ interface AppContextValue extends StoredState {
   deleteTask: (id: string) => Promise<void>;
   claimSlot: (taskId: string, slotIndex: number) => Promise<string | void>;
   cancelSlot: (taskId: string) => Promise<string | void>;
+  /** Renuncia al tiempo de espera: deja la inscripción firme al instante. */
+  confirmSlot: (taskId: string) => Promise<string | void>;
   joinWaitlist: (taskId: string) => Promise<string | void>;
   leaveWaitlist: (taskId: string) => Promise<string | void>;
   hasEvidence: (task: EventTask) => boolean;
@@ -223,6 +225,8 @@ interface AppContextValue extends StoredState {
   /** Vuelve a traer la conversación de una tarea (al abrirla o tras inscribirse). */
   refreshTaskChat: (taskId: string) => Promise<void>;
   toggleReaction: (taskId: string, messageId: string, emoji: "👍" | "❤️" | "✅") => Promise<void>;
+  /** Elimina un mensaje del chat (solo el autor o un administrador). */
+  deleteChatMessage: (taskId: string, messageId: string) => Promise<string | void>;
   /** Sube un archivo real y devuelve su enlace público. */
   uploadFile: (file: File, carpeta: string) => Promise<{ url: string; name: string } | string>;
   addEvidence: (taskId: string, file: File) => Promise<string | void>;
@@ -794,6 +798,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [notify, currentUser]
   );
 
+  const confirmSlot: AppContextValue["confirmSlot"] = useCallback(async (taskId) => {
+    if (!supabase) return "Supabase no está configurado";
+    const { error } = await supabase.rpc("confirmar_inscripcion", { p_task_id: taskId });
+    if (error) {
+      return error.message.toLowerCase().includes("does not exist")
+        ? "Falta aplicar el SQL 'CONFIRMAR-Y-BORRAR' en Supabase."
+        : error.message;
+    }
+  }, []);
+
   const joinWaitlist: AppContextValue["joinWaitlist"] = useCallback(async (taskId) => {
     if (!supabase) return "Supabase no está configurado";
     const { error } = await supabase.rpc("join_waitlist", { p_task_id: taskId });
@@ -909,6 +923,23 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
 
   /** Sube una evidencia real (foto o documento) a la tarea. */
+  const deleteChatMessage: AppContextValue["deleteChatMessage"] = useCallback(async (taskId, messageId) => {
+    if (!supabase) return "Supabase no está configurado";
+    const { error } = await supabase.rpc("borrar_mensaje", { p_message_id: messageId });
+    if (error) {
+      return error.message.toLowerCase().includes("does not exist")
+        ? "Falta aplicar el SQL 'CONFIRMAR-Y-BORRAR' en Supabase."
+        : error.message;
+    }
+    // Quitarlo de inmediato, sin esperar el aviso en tiempo real.
+    setState((prev) => ({
+      ...prev,
+      tasks: prev.tasks.map((t) =>
+        t.id === taskId ? { ...t, chat: t.chat.filter((m) => m.id !== messageId) } : t
+      ),
+    }));
+  }, []);
+
   const addEvidence: AppContextValue["addEvidence"] = useCallback(
     async (taskId, file) => {
       if (!supabase) return "Supabase no está configurado";
@@ -1360,6 +1391,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     deleteTask,
     claimSlot,
     cancelSlot,
+    confirmSlot,
     joinWaitlist,
     leaveWaitlist,
     hasEvidence,
@@ -1373,6 +1405,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     addChatMessage,
     refreshTaskChat,
     toggleReaction,
+    deleteChatMessage,
     uploadFile,
     addEvidence,
     removeEvidence,

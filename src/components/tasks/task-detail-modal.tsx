@@ -10,7 +10,7 @@ import { cancelRemainingSeconds, canStillCancel, isTaskFull, slotProgress } from
 import { Avatar } from "@/components/ui/avatar";
 import { ProgressBar } from "@/components/ui/progress";
 import { ExecStatusPill, PriorityPill } from "@/components/ui/pills";
-import { Paperclip, ImagePlus, Send, Crown, UserPlus, X, FileText, Hourglass, AlertTriangle, Lock, Users, RotateCcw, CheckCircle2, Pencil, AtSign } from "lucide-react";
+import { Paperclip, ImagePlus, Send, Crown, UserPlus, X, FileText, Hourglass, AlertTriangle, Lock, Users, RotateCcw, CheckCircle2, Pencil, AtSign, Trash2 } from "lucide-react";
 import { cx } from "@/lib/utils";
 
 const statusOrder: TaskExecStatus[] = ["sin_iniciar", "en_proceso", "terminada"];
@@ -21,7 +21,7 @@ const statusLabel: Record<TaskExecStatus, string> = {
 };
 
 export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClose: () => void; task: EventTask }) {
-  const { userById, eventById, currentUser, isAdmin, canDeleteTask, claimSlot, cancelSlot, joinWaitlist, leaveWaitlist, hasEvidence, canFinishTask, setExecStatus, addChatMessage, refreshTaskChat, toggleReaction, addEvidence, removeEvidence, deleteTask, settings } =
+  const { userById, eventById, currentUser, isAdmin, canDeleteTask, claimSlot, cancelSlot, confirmSlot, joinWaitlist, leaveWaitlist, hasEvidence, canFinishTask, setExecStatus, addChatMessage, refreshTaskChat, toggleReaction, deleteChatMessage, addEvidence, removeEvidence, deleteTask, settings } =
     useApp();
   const [tab, setTab] = useState<"detalle" | "chat" | "evidencias">("detalle");
   const [message, setMessage] = useState("");
@@ -156,12 +156,21 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
               </b>
             </span>
           </p>
-          <button
-            onClick={() => ejecutar(() => cancelSlot(task.id))}
-            className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
-          >
-            <RotateCcw className="h-3.5 w-3.5" /> Deshacer
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => ejecutar(() => cancelSlot(task.id))}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Deshacer
+            </button>
+            <button
+              onClick={() => ejecutar(() => confirmSlot(task.id))}
+              title="Renunciar al tiempo de espera y entrar al chat ahora"
+              className="flex items-center gap-1.5 rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" /> Ya me decidí, confirmar
+            </button>
+          </div>
         </div>
       )}
 
@@ -237,7 +246,21 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                       {user ? (
                         <>
                           <Avatar name={user.name} color={user.color} size="xs" />
-                          <span className="text-sm font-medium text-ink-800">{user.name}</span>
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-medium text-ink-800">
+                              {user.name}
+                              {task.leaderId === user.id && (
+                                <Crown className="ml-1 inline h-3 w-3 text-amber-600" />
+                              )}
+                            </span>
+                            {(user.title || user.area) && (
+                              <span className="block truncate text-[11px] text-ink-400">
+                                {user.title}
+                                {user.title && user.area ? " · " : ""}
+                                {user.area}
+                              </span>
+                            )}
+                          </span>
                         </>
                       ) : (
                         <span className="text-sm text-ink-400">Lugar disponible</span>
@@ -459,6 +482,20 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                     </div>
                     <div className={cx("mt-1 flex items-center gap-2 text-[11px] text-ink-400", mine && "justify-end")}>
                       <span>{timeAgo(m.createdAt)}</span>
+                      {(mine || isAdmin) && (
+                        <button
+                          onClick={async () => {
+                            if (!window.confirm("¿Eliminar este mensaje? No se puede deshacer.")) return;
+                            const err = await deleteChatMessage(task.id, m.id);
+                            if (err) setAviso(err);
+                          }}
+                          title="Eliminar mensaje"
+                          aria-label="Eliminar mensaje"
+                          className="text-ink-300 transition-colors hover:text-rose-600"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
                       {(["👍", "❤️", "✅"] as const).map((emoji) => {
                         const count = m.reactions[emoji]?.length ?? 0;
                         return (
