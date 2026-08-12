@@ -21,7 +21,7 @@ const statusLabel: Record<TaskExecStatus, string> = {
 };
 
 export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClose: () => void; task: EventTask }) {
-  const { userById, eventById, currentUser, isAdmin, canDeleteTask, claimSlot, cancelSlot, confirmSlot, joinWaitlist, leaveWaitlist, hasEvidence, canFinishTask, setExecStatus, addChatMessage, refreshTaskChat, toggleReaction, deleteChatMessage, addEvidence, removeEvidence, deleteTask, settings } =
+  const { userById, eventById, currentUser, isAdmin, claimSlot, cancelSlot, confirmSlot, joinWaitlist, leaveWaitlist, hasEvidence, canFinishTask, setExecStatus, addChatMessage, refreshTaskChat, toggleReaction, deleteChatMessage, addEvidence, removeEvidence, deleteTask, settings } =
     useApp();
   const [tab, setTab] = useState<"detalle" | "chat" | "evidencias">("detalle");
   const [message, setMessage] = useState("");
@@ -59,7 +59,17 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
   const full = isTaskFull(task);
   const mySlot = task.slots.find((s) => s.userId === currentUser?.id);
   const eventoCerrado = event?.status === "finalizado" || event?.status === "archivado";
-  const canManage = (isAdmin || canDeleteTask(task)) && !eventoCerrado;
+  /* ------------------------------------------------------------------
+     QUIÉN PUEDE HACER QUÉ EN UNA TAREA
+       Cualquiera         : ver la tarea, quiénes participan, e inscribirse.
+       Equipo confirmado  : chat, evidencias y avance de la tarea.
+       Líder              : lo anterior + moderar las evidencias.
+       Creador del evento : lo anterior + editar y eliminar la tarea.
+       Administrador      : todo, por su papel de supervisión.
+     ------------------------------------------------------------------ */
+  const esDuenoEvento = event?.createdBy === currentUser?.id;
+  /** Editar o eliminar la tarea: solo quien creó el evento (y la administración). */
+  const canManage = (isAdmin || esDuenoEvento) && !eventoCerrado;
   const inWaitlist = task.waitlist.includes(currentUser?.id ?? "");
   const waitPos = task.waitlist.indexOf(currentUser?.id ?? "") + 1;
   const evidenceOk = canFinishTask(task);
@@ -79,7 +89,13 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
   /** Con quién se puede hablar en privado dentro de esta tarea. */
   const companeros = Array.from(new Set(team)).filter((id) => id !== currentUser?.id);
   /** El avance lo marca quien trabaja en la tarea, no solo la administración. */
-  const puedeCambiarEstado = canManage || canWrite;
+  const esLider = task.leaderId === currentUser?.id;
+  /** Marcar el avance: lo hace quien trabaja en la tarea. */
+  const puedeCambiarEstado = (canWrite || canManage) && !eventoCerrado;
+  /** Subir evidencias: solo el equipo confirmado, no cualquiera que mire. */
+  const puedeSubirEvidencia = canWrite && !eventoCerrado;
+  /** Moderar cualquier evidencia: líder, dueño del evento o administración. */
+  const puedeModerarEvidencia = isAdmin || esDuenoEvento || esLider;
 
   useEffect(() => {
     const id = setInterval(() => forceTick((v) => v + 1), 1000);
@@ -390,6 +406,9 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
 
           {canManage && (
             <div className="flex flex-wrap items-center justify-end gap-3 border-t border-ink-100 pt-4">
+              <span className="mr-auto text-xs text-ink-400">
+                {isAdmin && !esDuenoEvento ? "Acciones de administración" : "Acciones del organizador del evento"}
+              </span>
               <button onClick={() => setEditOpen(true)} className="btn-secondary !py-1.5 !text-xs">
                 <Pencil className="h-3.5 w-3.5" /> Editar tarea
               </button>
@@ -698,15 +717,27 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             }}
           />
 
+          {!puedeSubirEvidencia && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-ink-200 bg-ink-50 px-3.5 py-3 text-sm leading-relaxed text-ink-600">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0 text-ink-400" />
+              <span>
+                Puedes ver el trabajo documentado, pero solo quienes están inscritos en la tarea pueden
+                subir o quitar evidencias.
+              </span>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-ink-700">Fotografías de avance</p>
-            <button
-              onClick={() => fotoRef.current?.click()}
-              disabled={subiendo}
-              className="btn-secondary !py-1.5 !text-xs"
-            >
-              <ImagePlus className="h-3.5 w-3.5" /> {subiendo ? "Subiendo..." : "Subir foto"}
-            </button>
+            {puedeSubirEvidencia && (
+              <button
+                onClick={() => fotoRef.current?.click()}
+                disabled={subiendo}
+                className="btn-secondary !py-1.5 !text-xs"
+              >
+                <ImagePlus className="h-3.5 w-3.5" /> {subiendo ? "Subiendo..." : "Subir foto"}
+              </button>
+            )}
           </div>
           {task.evidence.length === 0 ? (
             <p className="text-sm text-ink-400">No se han subido evidencias aún.</p>
@@ -714,7 +745,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
               {task.evidence.map((ev) => {
                 const autor = userById(ev.uploadedBy);
-                const puedeBorrar = isAdmin || canManage || ev.uploadedBy === currentUser?.id;
+                const puedeBorrar = puedeModerarEvidencia || ev.uploadedBy === currentUser?.id;
                 return (
                   <div key={ev.id} className="group relative overflow-hidden rounded-xl border border-ink-100">
                     {ev.url ? (
@@ -754,13 +785,15 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
 
           <div className="flex items-center justify-between border-t border-ink-100 pt-5">
             <p className="text-sm font-medium text-ink-700">Documentos adjuntos</p>
-            <button
-              onClick={() => docRef.current?.click()}
-              disabled={subiendo}
-              className="btn-secondary !py-1.5 !text-xs"
-            >
-              <Paperclip className="h-3.5 w-3.5" /> {subiendo ? "Subiendo..." : "Subir archivo"}
-            </button>
+            {puedeSubirEvidencia && (
+              <button
+                onClick={() => docRef.current?.click()}
+                disabled={subiendo}
+                className="btn-secondary !py-1.5 !text-xs"
+              >
+                <Paperclip className="h-3.5 w-3.5" /> {subiendo ? "Subiendo..." : "Subir archivo"}
+              </button>
+            )}
           </div>
           {task.attachments.length === 0 ? (
             <p className="text-sm text-ink-400">No hay documentos adjuntos.</p>
@@ -768,7 +801,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             <div className="space-y-2">
               {task.attachments.map((doc) => {
                 const autor = userById(doc.uploadedBy);
-                const puedeBorrar = isAdmin || canManage || doc.uploadedBy === currentUser?.id;
+                const puedeBorrar = puedeModerarEvidencia || doc.uploadedBy === currentUser?.id;
                 return (
                   <div key={doc.id} className="flex items-center gap-3 rounded-xl border border-ink-100 px-3 py-2.5">
                     <FileText className="h-4 w-4 shrink-0 text-ink-500" />
