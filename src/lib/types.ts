@@ -49,6 +49,8 @@ export interface ChatMessage {
   reactions: Partial<Record<"👍" | "❤️" | "✅", string[]>>; // emoji -> userIds
   /** Fotos y documentos compartidos dentro del mensaje. */
   attachments?: EvidenceItem[];
+  /** Si está presente, el mensaje es privado y solo lo ven autor y destinatario. */
+  recipientId?: string;
 }
 
 export interface EvidenceItem {

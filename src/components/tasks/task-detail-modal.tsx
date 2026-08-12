@@ -10,7 +10,7 @@ import { cancelRemainingSeconds, canStillCancel, isTaskFull, slotProgress } from
 import { Avatar } from "@/components/ui/avatar";
 import { ProgressBar } from "@/components/ui/progress";
 import { ExecStatusPill, PriorityPill } from "@/components/ui/pills";
-import { Paperclip, ImagePlus, Send, Crown, UserPlus, X, FileText, Hourglass, AlertTriangle, Lock, Users, RotateCcw, CheckCircle2, Pencil } from "lucide-react";
+import { Paperclip, ImagePlus, Send, Crown, UserPlus, X, FileText, Hourglass, AlertTriangle, Lock, Users, RotateCcw, CheckCircle2, Pencil, AtSign } from "lucide-react";
 import { cx } from "@/lib/utils";
 
 const statusOrder: TaskExecStatus[] = ["sin_iniciar", "en_proceso", "terminada"];
@@ -29,6 +29,8 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
   const [editOpen, setEditOpen] = useState(false);
   const [aviso, setAviso] = useState("");
   const [adjuntos, setAdjuntos] = useState<File[]>([]);
+  const [privadoPara, setPrivadoPara] = useState<string | null>(null);
+  const [listaMenciones, setListaMenciones] = useState(false);
   const fotoRef = useRef<HTMLInputElement>(null);
   const docRef = useRef<HTMLInputElement>(null);
   const chatFotoRef = useRef<HTMLInputElement>(null);
@@ -68,7 +70,14 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
     task.leaderId,
     event?.createdBy,
   ].filter((x): x is string => !!x);
-  const canWrite = team.includes(currentUser?.id ?? "") || isAdmin;
+  /* Una inscripción cuenta como definitiva cuando ya pasó el tiempo para
+     deshacerla. Antes de eso no se entra al chat, porque todavía puede irse. */
+  const inscripcionConfirmada =
+    !!mySlot && (!mySlot.claimedAt || cancelRemainingSeconds(mySlot.claimedAt, settings.cancelWindowMinutes) === 0);
+  const esResponsable = isAdmin || task.leaderId === currentUser?.id || event?.createdBy === currentUser?.id;
+  const canWrite = esResponsable || inscripcionConfirmada;
+  /** Con quién se puede hablar en privado dentro de esta tarea. */
+  const companeros = Array.from(new Set(team)).filter((id) => id !== currentUser?.id);
   /** El avance lo marca quien trabaja en la tarea, no solo la administración. */
   const puedeCambiarEstado = canManage || canWrite;
 
@@ -84,9 +93,9 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
   // Al abrir la tarea traemos la conversación fresca. Hace falta sobre todo
   // después de inscribirse: antes no se tenía permiso para leerla.
   useEffect(() => {
-    if (open) refreshTaskChat(task.id);
+    if (open && canWrite) refreshTaskChat(task.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, task.id, task.slots.map((sl) => sl.userId).join(",")]);
+  }, [open, canWrite, task.id, task.slots.map((sl) => sl.userId).join(",")]);
 
   /** Ejecuta una acción y, si el servidor la rechaza, muestra por qué. */
   async function ejecutar(accion: () => Promise<string | void>) {
@@ -107,7 +116,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
     if (!message.trim() && adjuntos.length === 0) return;
     setSubiendo(true);
     setAviso("");
-    const err = await addChatMessage(task.id, message.trim(), adjuntos);
+    const err = await addChatMessage(task.id, message.trim(), adjuntos, privadoPara);
     setSubiendo(false);
     if (err) {
       setAviso(err);
@@ -115,6 +124,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
     }
     setMessage("");
     setAdjuntos([]);
+    setPrivadoPara(null);
   }
 
   return (
@@ -393,7 +403,26 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                 <div key={m.id} className={cx("flex gap-2.5", mine && "flex-row-reverse")}>
                   <Avatar name={nombreAutor} color={author?.color} size="sm" />
                   <div className={cx("max-w-[75%]", mine && "items-end text-right")}>
-                    <div className={cx("rounded-2xl px-3.5 py-2.5 text-sm", mine ? "bg-brand-700 text-white" : "bg-ink-100 text-ink-800")}>
+                    <div
+                      className={cx(
+                        "rounded-2xl px-3.5 py-2.5 text-sm",
+                        m.recipientId
+                          ? mine
+                            ? "border border-violet-300 bg-violet-700 text-white"
+                            : "border border-violet-300 bg-violet-50 text-violet-900"
+                          : mine
+                          ? "bg-brand-700 text-white"
+                          : "bg-ink-100 text-ink-800"
+                      )}
+                    >
+                      {m.recipientId && (
+                        <p className={cx("mb-1 flex items-center gap-1 text-[11px] font-semibold", mine ? "text-violet-100" : "text-violet-700")}>
+                          <Lock className="h-3 w-3" />
+                          {mine
+                            ? `Privado para ${userById(m.recipientId)?.name ?? "…"}`
+                            : "Privado, solo para ti"}
+                        </p>
+                      )}
                       {!mine && <p className="mb-0.5 text-xs font-semibold text-brand-700">{nombreAutor}</p>}
                       {m.text}
 
@@ -456,8 +485,17 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm leading-relaxed text-amber-800">
               <Lock className="mt-0.5 h-4 w-4 shrink-0" />
               <span>
-                <strong>Solo lectura.</strong> El chat es para quienes trabajan en esta tarea. Inscríbete y podrás
-                escribir con el equipo.
+                {mySlot ? (
+                  <>
+                    <strong>Chat bloqueado por ahora.</strong> Tu inscripción aún se puede deshacer. Cuando termine
+                    el tiempo de espera entrarás automáticamente al chat del equipo.
+                  </>
+                ) : (
+                  <>
+                    <strong>Chat privado del equipo.</strong> Puedes ver la tarea y quiénes participan, pero la
+                    conversación es solo para quienes trabajan en ella. Inscríbete para entrar.
+                  </>
+                )}
               </span>
             </div>
           ) : (
@@ -483,6 +521,43 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                 ))}
               </div>
             )}
+            {privadoPara && (
+              <div className="mb-2 flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-xs text-violet-800">
+                <Lock className="h-3.5 w-3.5 shrink-0" />
+                <span className="flex-1">
+                  Mensaje privado para <strong>{userById(privadoPara)?.name ?? "…"}</strong>. Nadie más lo verá.
+                </span>
+                <button type="button" onClick={() => setPrivadoPara(null)} aria-label="Quitar destinatario privado">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+
+            {listaMenciones && companeros.length > 0 && (
+              <div className="mb-2 rounded-xl border border-ink-200 bg-white p-1.5 shadow-sm">
+                <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-ink-400">
+                  Escribir en privado a
+                </p>
+                {companeros.map((id) => {
+                  const persona = userById(id);
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => {
+                        setPrivadoPara(id);
+                        setListaMenciones(false);
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-ink-50"
+                    >
+                      <Avatar name={persona?.name ?? "?"} color={persona?.color} size="xs" />
+                      <span className="truncate">{persona?.name ?? "Alguien"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <form onSubmit={handleSend} className="flex items-center gap-2">
               <input
                 ref={chatFotoRef}
@@ -505,6 +580,16 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                   e.target.value = "";
                 }}
               />
+              {companeros.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setListaMenciones((v) => !v)}
+                  className="btn-ghost !px-2.5"
+                  title="Escribir en privado a alguien del equipo"
+                >
+                  <AtSign className="h-4 w-4" />
+                </button>
+              )}
               <button type="button" onClick={() => chatFotoRef.current?.click()} className="btn-ghost !px-2.5" title="Compartir fotografía">
                 <ImagePlus className="h-4 w-4" />
               </button>

@@ -121,6 +121,7 @@ function mapChat(r: any): ChatMessage {
     createdAt: r.created_at,
     reactions: r.reactions ?? {},
     attachments: r.attachments ?? [],
+    recipientId: r.recipient_id ?? undefined,
   };
 }
 function mapTask(r: any, chat: ChatMessage[]): EventTask {
@@ -218,7 +219,7 @@ interface AppContextValue extends StoredState {
    */
   notify: (title: string, detail: string, audience?: "all" | "admins" | string[]) => Promise<void>;
   setExecStatus: (taskId: string, status: TaskExecStatus) => Promise<string | void>;
-  addChatMessage: (taskId: string, text: string, adjuntos?: File[]) => Promise<string | void>;
+  addChatMessage: (taskId: string, text: string, adjuntos?: File[], destinatario?: string | null) => Promise<string | void>;
   /** Vuelve a traer la conversación de una tarea (al abrirla o tras inscribirse). */
   refreshTaskChat: (taskId: string) => Promise<void>;
   toggleReaction: (taskId: string, messageId: string, emoji: "👍" | "❤️" | "✅") => Promise<void>;
@@ -838,7 +839,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const esImagen = (f: File) => f.type.startsWith("image/");
 
   const addChatMessage: AppContextValue["addChatMessage"] = useCallback(
-    async (taskId, text, adjuntos = []) => {
+    async (taskId, text, adjuntos = [], destinatario = null) => {
       if (!supabase) return "Supabase no está configurado";
       const subidos: {
         id: string; type: "image" | "file"; name: string; url: string; uploadedBy: string; uploadedAt: string;
@@ -859,6 +860,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         p_task_id: taskId,
         p_text: text,
         p_attachments: subidos,
+        p_recipient: destinatario,
       });
       if (error) return error.message;
 

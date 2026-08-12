@@ -145,13 +145,25 @@ export function TaskCard({ task, showEventName = false }: { task: EventTask; sho
               <Hourglass className="h-3.5 w-3.5" /> En espera · puesto {waitPos} — salir
             </button>
           ) : full ? (
-            <button onClick={() => ejecutar(() => joinWaitlist(task.id))} disabled={ocupado} className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-ink-500 hover:underline disabled:opacity-60">
-              <Hourglass className="h-3.5 w-3.5" /> Llena — apuntarme a la lista de espera
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button onClick={() => setOpen(true)} className="text-sm font-medium text-ink-500 hover:underline">
+                Ver detalle
+              </button>
+              <span className="h-4 w-px bg-ink-200" />
+              <button onClick={() => ejecutar(() => joinWaitlist(task.id))} disabled={ocupado} className="flex items-center justify-center gap-1.5 text-sm font-medium text-ink-500 hover:underline disabled:opacity-60">
+                <Hourglass className="h-3.5 w-3.5" /> Lista de espera
+              </button>
+            </div>
           ) : (
-            <button onClick={handleJoin} disabled={ocupado} className="flex w-full items-center justify-center gap-1.5 text-sm font-medium text-brand-700 hover:underline disabled:opacity-60">
-              <UserPlus className="h-3.5 w-3.5" /> {ocupado ? "Inscribiendo..." : "Inscribirme"}
-            </button>
+            <div className="flex items-center justify-center gap-4">
+              <button onClick={() => setOpen(true)} className="text-sm font-medium text-ink-500 hover:underline">
+                Ver detalle
+              </button>
+              <span className="h-4 w-px bg-ink-200" />
+              <button onClick={handleJoin} disabled={ocupado} className="flex items-center justify-center gap-1.5 text-sm font-medium text-brand-700 hover:underline disabled:opacity-60">
+                <UserPlus className="h-3.5 w-3.5" /> {ocupado ? "Inscribiendo..." : "Inscribirme"}
+              </button>
+            </div>
           )}
           {aviso && (
             <p className="mt-2 rounded-lg bg-rose-50 px-2.5 py-1.5 text-center text-xs font-medium text-rose-700">{aviso}</p>
