@@ -1,5 +1,5 @@
 {
-  "id": "/sb-2026-08-13-nueva",
+  "id": "/sb-2026-08-13-b",
   "name": "Staff Board · Caracoli Global School",
   "short_name": "Staff Board",
   "description": "La pizarra digital del colegio: eventos, tareas y colaboración del equipo.",
@@ -9,8 +9,8 @@
   "background_color": "#f6f8f7",
   "theme_color": "#0d1712",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "/icon-192-v2.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512-v2.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512-v2.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
