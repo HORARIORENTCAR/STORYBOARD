@@ -7,7 +7,7 @@
 /* Marca de esta versión del código. Sirve para saber, de un vistazo, si lo que
    está publicado en internet es realmente lo último que subimos a GitHub.
    Si la página /instalar no muestra exactamente esta marca, el despliegue no llegó. */
-export const VERSION_APP = "2026.08.13-final";
+export const VERSION_APP = "2026.08.13-final-2";
 
 export type EventoInstalacion = Event & {
   prompt: () => Promise<void>;

@@ -208,7 +208,11 @@ export default function CalendarioPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
         <div className="card p-5">
-          <div className="mb-5 flex items-center justify-between">
+          {/* En el celular esta cabecera se parte en dos filas: arriba el mes y el
+              botón de nueva fecha, y debajo el mural a todo lo ancho. Antes el
+              mural llevaba "hidden sm:flex" y sencillamente no existía en el
+              teléfono. */}
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-y-3">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setCursor(new Date(year, month - 1, 1))}
@@ -216,7 +220,7 @@ export default function CalendarioPage() {
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <h2 className="w-52 text-center text-lg font-bold capitalize text-ink-900">{monthLabel}</h2>
+              <h2 className="w-36 text-center text-lg font-bold capitalize text-ink-900 sm:w-52">{monthLabel}</h2>
               <button
                 onClick={() => setCursor(new Date(year, month + 1, 1))}
                 className="flex h-9 w-9 items-center justify-center rounded-xl border border-ink-200 hover:bg-ink-50"
@@ -234,7 +238,8 @@ export default function CalendarioPage() {
               }}
               title={mural?.content || "Notas de este mes"}
               className={cx(
-                "mx-3 hidden min-w-0 flex-1 items-center gap-2 rounded-xl border px-3.5 py-2 text-left transition-colors sm:flex",
+                "order-last flex w-full min-w-0 items-center gap-2 rounded-xl border px-3.5 py-2 text-left transition-colors",
+                "sm:order-none sm:mx-3 sm:w-auto sm:flex-1",
                 mural?.content
                   ? "border-amber-200 bg-amber-50 hover:bg-amber-100"
                   : "border-dashed border-ink-300 hover:border-brand-400 hover:bg-brand-50/40"
