@@ -7,7 +7,7 @@
 /* Marca de esta versión del código. Sirve para saber, de un vistazo, si lo que
    está publicado en internet es realmente lo último que subimos a GitHub.
    Si la página /instalar no muestra exactamente esta marca, el despliegue no llegó. */
-export const VERSION_APP = "2026.08.13-final-2";
+export const VERSION_APP = "2026.08.13-boton";
 
 export type EventoInstalacion = Event & {
   prompt: () => Promise<void>;
@@ -439,14 +439,14 @@ export function pasosManuales(plataforma: Plataforma, navegador: string): {
       };
     case "android-chrome":
       return {
-        titulo: "En tu Android",
+        titulo: "En tu Android, desde el menú del navegador",
         pasos: [
-          "Toca los tres puntos ⋮ arriba a la derecha del navegador.",
-          "Elige «Instalar aplicación» o «Añadir a pantalla de inicio».",
-          "Confirma tocando «Instalar».",
-          "Listo: el ícono de Staff Board queda en tu pantalla de inicio.",
+          "Busca los tres puntitos ⋮ del navegador. Están en una esquina: arriba a la derecha, o abajo a la derecha junto a la barra de la dirección. Tócalos.",
+          "Se abre una lista. Bájala hasta encontrar «Instalar aplicación» o «Añadir a pantalla de inicio». Suele estar por la mitad.",
+          "Tócala. Sale un cuadro con el nombre Staff Board y su ícono.",
+          "Pulsa «Instalar» o «Añadir». El ícono queda en tu pantalla de inicio, junto a tus otras apps.",
         ],
-        nota: "Si no ves esa opción, cierra el navegador, vuelve a abrir esta página y espera unos segundos antes de tocar los tres puntos.",
+        nota: "¿No encuentras esa opción en la lista? Casi siempre es porque ya tienes la app instalada: el navegador deja de ofrecerla. Búscala primero entre tus aplicaciones deslizando hacia arriba en la pantalla de inicio.",
       };
     case "escritorio-chromium":
       return {

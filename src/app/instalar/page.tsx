@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { cx } from "@/lib/utils";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -50,6 +51,8 @@ export default function InstalarPage() {
     dentro: false,
     app: "",
   });
+  const [resaltarPasos, setResaltarPasos] = useState(false);
+  const pasosRef = useRef<HTMLDivElement | null>(null);
   const [revisiones, setRevisiones] = useState<Revision[] | null>(null);
   const [revisando, setRevisando] = useState(false);
   const [copiadoDiag, setCopiadoDiag] = useState(false);
@@ -79,7 +82,16 @@ export default function InstalarPage() {
     };
   }, [revisar]);
 
-  async function instalar() {
+  /* Un solo botón para las dos situaciones: si el navegador nos dejó el permiso
+     automático, lo lanzamos; si no, llevamos a la persona hasta los pasos y se
+     los resaltamos para que no tenga que buscarlos. */
+  async function instalarOMostrarPasos() {
+    if (!promptDisponible()) {
+      setResaltarPasos(true);
+      pasosRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => setResaltarPasos(false), 4000);
+      return;
+    }
     setInstalando(true);
     setAviso("");
     const ok = await lanzarInstalacion();
@@ -89,7 +101,10 @@ export default function InstalarPage() {
       return;
     }
     setHayPrompt(Boolean(promptDisponible()));
-    setAviso("No se completó la instalación. Puedes intentarlo de nuevo o seguir los pasos de abajo.");
+    setResaltarPasos(true);
+    pasosRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => setResaltarPasos(false), 4000);
+    setAviso("No se completó la instalación. Sigue los pasos resaltados aquí abajo.");
   }
 
   async function revisarTodo() {
@@ -215,40 +230,56 @@ export default function InstalarPage() {
                   <strong className="text-ink-900">{navegador}</strong>
                 </div>
 
-                {hayPrompt && (
-                  <div className="mb-6 rounded-2xl border-2 border-brand-500 bg-brand-50 p-5 text-center">
-                    <p className="text-sm font-semibold text-brand-900">
-                      Tu navegador puede instalarla ahora mismo
-                    </p>
-                    <button
-                      onClick={instalar}
-                      disabled={instalando}
-                      className="btn-primary mx-auto mt-3 !px-6 !py-3 !text-base"
-                    >
-                      <Download className="h-5 w-5" />
-                      {instalando ? "Instalando..." : "Instalar Staff Board"}
-                    </button>
-                    <p className="mt-2.5 text-xs text-brand-800">
-                      Se abrirá un cuadro del navegador. Pulsa «Instalar» para confirmar.
-                    </p>
-                  </div>
-                )}
+                {/* El botón grande está SIEMPRE, tenga o no el navegador su
+                    permiso automático. Si el navegador no lo ofrece, en vez de
+                    dejar a la persona sin nada que pulsar, el botón despliega
+                    los pasos y los resalta. Nunca un callejón sin salida. */}
+                <div className="mb-6 rounded-2xl border-2 border-brand-500 bg-brand-50 p-5 text-center">
+                  <p className="text-sm font-semibold text-brand-900">
+                    {hayPrompt
+                      ? "Tu navegador puede instalarla ahora mismo"
+                      : "Pulsa aquí para instalarla"}
+                  </p>
+                  <button
+                    onClick={instalarOMostrarPasos}
+                    disabled={instalando}
+                    className="btn-primary mx-auto mt-3 w-full !py-4 !text-base sm:w-auto sm:!px-8"
+                  >
+                    <Download className="h-5 w-5" />
+                    {instalando ? "Instalando..." : "Instalar Staff Board"}
+                  </button>
+                  <p className="mt-2.5 text-xs text-brand-800">
+                    {hayPrompt
+                      ? "Se abrirá un cuadro del navegador. Pulsa «Instalar» para confirmar."
+                      : "Tu navegador no trae el botón automático. Te muestro dónde está el suyo."}
+                  </p>
+                </div>
 
-                <p className="section-eyebrow">
-                  {hayPrompt ? "O hazlo a mano" : "Pasos a seguir"}
-                </p>
-                <h2 className="mt-1 text-lg font-bold text-ink-900">{manual.titulo}</h2>
+                <div
+                  ref={pasosRef}
+                  className={cx(
+                    "rounded-2xl p-4 transition-all",
+                    resaltarPasos
+                      ? "bg-amber-50 ring-4 ring-amber-300"
+                      : "bg-transparent ring-0"
+                  )}
+                >
+                  <p className="section-eyebrow">
+                    {hayPrompt ? "O hazlo a mano" : "Hazlo así, es igual de fácil"}
+                  </p>
+                  <h2 className="mt-1 text-lg font-bold text-ink-900">{manual.titulo}</h2>
 
-                <ol className="mt-4 space-y-3">
-                  {manual.pasos.map((paso, i) => (
-                    <li key={i} className="flex gap-3">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-700 text-xs font-bold text-white">
-                        {i + 1}
-                      </span>
-                      <p className="pt-0.5 text-sm leading-relaxed text-ink-700">{paso}</p>
-                    </li>
-                  ))}
-                </ol>
+                  <ol className="mt-4 space-y-4">
+                    {manual.pasos.map((paso, i) => (
+                      <li key={i} className="flex gap-3">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-700 text-base font-bold text-white">
+                          {i + 1}
+                        </span>
+                        <p className="pt-1 text-base leading-relaxed text-ink-800">{paso}</p>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
 
                 {manual.nota && (
                   <div className="mt-5 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
