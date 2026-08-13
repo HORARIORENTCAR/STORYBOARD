@@ -3,8 +3,8 @@
    El problema de la v1 era que el código de la app (JS/CSS) se servía desde
    la caché para siempre, así que las correcciones publicadas nunca llegaban
    al usuario. Ahora la caché solo sirve como respaldo cuando no hay internet. */
-const CACHE = "staff-board-v3";
-const ESENCIALES = ["/", "/manifest.json"];
+const CACHE = "staff-board-v5";
+const ESENCIALES = ["/", "/app.webmanifest"];
 
 self.addEventListener("install", (e) => {
   // skipWaiting: la versión nueva toma el control de inmediato,

@@ -7,7 +7,7 @@
 /* Marca de esta versión del código. Sirve para saber, de un vistazo, si lo que
    está publicado en internet es realmente lo último que subimos a GitHub.
    Si la página /instalar no muestra exactamente esta marca, el despliegue no llegó. */
-export const VERSION_APP = "2026.08.13-SOLO-BOTON";
+export const VERSION_APP = "2026.08.13-IDENTIDAD-2";
 
 export type EventoInstalacion = Event & {
   prompt: () => Promise<void>;
@@ -208,7 +208,7 @@ async function revisarManifiesto(): Promise<Revision[]> {
 
   let datos: Record<string, unknown> | null = null;
   try {
-    const r = await fetch("/manifest.json", { cache: "no-store" });
+    const r = await fetch("/app.webmanifest", { cache: "no-store" });
     if (!r.ok) {
       out.push({
         nombre: "Archivo manifest.json",

@@ -10,7 +10,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 export const metadata: Metadata = {
   title: "Staff Board · Caracoli Global School",
   description: "La pizarra digital del colegio: eventos, tareas y colaboración del equipo.",
-  manifest: "/manifest.json",
+  manifest: "/app.webmanifest",
   applicationName: "Staff Board",
   appleWebApp: {
     capable: true,
