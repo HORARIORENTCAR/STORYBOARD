@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Globe, ListChecks, FolderOpen, CalendarDays, MoreHorizontal,
-  ClipboardCheck, History, UserCog, Eye, Users, Settings, LogOut, X,
+  ClipboardCheck, History, UserCog, Eye, Users, Settings, LogOut, X, ClipboardList,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { cx } from "@/lib/utils";
@@ -118,6 +118,7 @@ export function MobileNav() {
             <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wider text-ink-400">
               Mi espacio personal
             </p>
+            {sheetItem("/pizarra", ClipboardList, "Pizarra de asignaciones")}
             {sheetItem("/agenda", ClipboardCheck, "Mi agenda")}
             {sheetItem("/historial", History, "Historial de actividad")}
             {sheetItem("/perfil", UserCog, "Mi perfil")}

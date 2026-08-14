@@ -14,6 +14,7 @@ import {
   TaskExecStatus,
 } from "./types";
 import { dueLabel, isDueSoon, shouldArchive } from "./task-helpers";
+import { CURSOS, Pizarra, PizarraFila } from "./types";
 import { comprimirImagen } from "./imagenes";
 import { avisarAlEquipo } from "./push";
 
@@ -56,6 +57,7 @@ interface StoredState {
   calendar: CalendarEntry[];
   monthNotes: MonthNote[];
   history: HistoryEntry[];
+  pizarras: Pizarra[];
   notifications: AppNotification[];
   settings: InstitutionSettings;
   currentUserId: string;
@@ -66,6 +68,7 @@ interface StoredState {
 }
 
 const emptyState: StoredState = {
+  pizarras: [],
   users: [],
   events: [],
   tasks: [],
@@ -166,6 +169,36 @@ function mapMonthNote(r: any): MonthNote {
 function mapCalendar(r: any): CalendarEntry {
   return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined, description: r.description ?? undefined, responsibles: r.responsibles ?? undefined, customKind: r.custom_kind ?? undefined, eventId: r.event_id ?? undefined };
 }
+function mapPizarraFila(r: any): PizarraFila {
+  return {
+    id: r.id,
+    pizarraId: r.pizarra_id,
+    curso: r.curso,
+    orden: r.orden ?? 0,
+    asignacion: r.asignacion ?? undefined,
+    presupuesto: r.presupuesto ?? undefined,
+    ayudante: r.ayudante ?? undefined,
+    hecho: !!r.hecho,
+    hechoPor: r.hecho_por ?? undefined,
+    hechoAt: r.hecho_at ?? undefined,
+  };
+}
+function mapPizarra(r: any, filas: any[]): Pizarra {
+  return {
+    id: r.id,
+    title: r.title,
+    date: r.date ?? undefined,
+    session: r.session ?? undefined,
+    notes: r.notes ?? undefined,
+    status: r.status,
+    createdBy: r.created_by ?? undefined,
+    createdAt: r.created_at,
+    filas: filas
+      .filter((f) => f.pizarra_id === r.id)
+      .map(mapPizarraFila)
+      .sort((a, b) => a.orden - b.orden),
+  };
+}
 function mapHistory(r: any): HistoryEntry {
   return { id: r.id, userId: r.user_id, action: r.action, detail: r.detail, type: r.type, createdAt: r.created_at };
 }
@@ -259,6 +292,17 @@ interface AppContextValue extends StoredState {
   fechaDeEvento: (eventId: string) => CalendarEntry | undefined;
   updateCalendarEntry: (id: string, patch: Partial<Omit<CalendarEntry, "id">>) => Promise<void>;
   removeCalendarEntry: (id: string) => Promise<void>;
+
+  /* --- Pizarra de asignaciones --- */
+  /** Crea una pizarra nueva con una fila por cada curso del colegio. */
+  crearPizarra: (datos: { title: string; date?: string; session?: string; notes?: string }) => Promise<string | void>;
+  /** Escribe la asignación, la cuenta y el ayudante de una fila. Solo administración. */
+  guardarFilaPizarra: (filaId: string, datos: { asignacion: string; presupuesto: string; ayudante: string }) => Promise<string | void>;
+  /** Marca o desmarca una fila como hecha. Cualquiera del personal. */
+  marcarFilaPizarra: (filaId: string, hecho: boolean) => Promise<string | void>;
+  /** Cierra o reabre la pizarra. */
+  cambiarEstadoPizarra: (pizarraId: string, status: "abierta" | "cerrada") => Promise<string | void>;
+  eliminarPizarra: (pizarraId: string) => Promise<string | void>;
   updateSettings: (patch: Partial<InstitutionSettings>) => Promise<void>;
   addUser: (data: { name: string; email: string; role: "admin" | "member"; title?: string; area?: string }) => Promise<{ error?: string; credenciales?: Credenciales }>;
   /** Genera una contraseña nueva para alguien y la devuelve. */
@@ -287,11 +331,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<StoredState>(emptyState);
   const stateRef = useRef(state);
   stateRef.current = state;
+  /* Puente para que el canal de tiempo real pueda recargar la pizarra sin
+     depender del orden en que se declaran las funciones más abajo. */
+  const recargarPizarrasRef = useRef<(() => Promise<void>) | null>(null);
 
   /** Carga todo lo visible para la sesión actual (RLS decide qué llega). */
   const loadAll = useCallback(async (userId: string) => {
     if (!supabase) return;
-    const [profilesR, eventsR, tasksR, chatR, notifR, readsR, calR, muralR, histR, settingsR] = await Promise.all([
+    const [profilesR, eventsR, tasksR, chatR, notifR, readsR, calR, muralR, histR, settingsR, pizR, pizFilasR] = await Promise.all([
       supabase.from("profiles").select("*"),
       supabase.from("events").select("*").order("created_at", { ascending: false }),
       supabase.from("event_tasks").select("*"),
@@ -302,6 +349,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       supabase.from("month_notes").select("*"),
       supabase.from("history_log").select("*").order("created_at", { ascending: false }).limit(500),
       supabase.from("institution_settings").select("*").single(),
+      supabase.from("pizarras").select("*").order("created_at", { ascending: false }),
+      supabase.from("pizarra_filas").select("*").order("orden", { ascending: true }),
     ]);
 
     const chatByTask = new Map<string, ChatMessage[]>();
@@ -329,6 +378,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       calendar: (calR.data ?? []).map(mapCalendar),
       monthNotes: (muralR.data ?? []).map(mapMonthNote),
       history: (histR.data ?? []).map(mapHistory),
+      pizarras: (pizR.data ?? []).map((r) => mapPizarra(r, pizFilasR.data ?? [])),
       notifications: (notifR.data ?? []).map((r) => mapNotification(r, readIds)),
       settings: settingsR.data ? mapSettings(settingsR.data) : defaultSettings,
       currentUserId: userId,
@@ -462,6 +512,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const alreadyRead = prev.notifications.find((n) => n.id === row.id)?.read ?? false;
           return { ...prev, notifications: upsert(prev.notifications, mapNotification(row, alreadyRead ? new Set([row.id]) : new Set()), deleted) };
         });
+      })
+      /* La pizarra cambia mientras varias personas la miran a la vez, así que
+         cualquier cambio recarga la sección entera: son pocos datos y así
+         nunca queda medio actualizada. */
+      .on("postgres_changes", { event: "*", schema: "public", table: "pizarras" }, () => {
+        recargarPizarrasRef.current?.();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "pizarra_filas" }, () => {
+        recargarPizarrasRef.current?.();
       })
       .subscribe();
 
@@ -1179,6 +1238,127 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [addCalendarEntry]
   );
 
+  /* ------------------------------------------------------------------ */
+  /* Pizarra de asignaciones                                              */
+  /* ------------------------------------------------------------------ */
+
+  /** Vuelve a traer las pizarras del servidor. Se usa tras cada cambio. */
+  const recargarPizarras = useCallback(async () => {
+    if (!supabase) return;
+    const [{ data: piz }, { data: filas }] = await Promise.all([
+      supabase.from("pizarras").select("*").order("created_at", { ascending: false }),
+      supabase.from("pizarra_filas").select("*").order("orden", { ascending: true }),
+    ]);
+    setState((prev) => ({
+      ...prev,
+      pizarras: (piz ?? []).map((r) => mapPizarra(r, filas ?? [])),
+    }));
+  }, []);
+
+  recargarPizarrasRef.current = recargarPizarras;
+
+  const crearPizarra: AppContextValue["crearPizarra"] = useCallback(
+    async (datos) => {
+      if (!supabase) return "Supabase no está configurado";
+      if (!datos.title.trim()) return "Ponle un nombre a la pizarra.";
+
+      const { data: fila, error } = await supabase
+        .from("pizarras")
+        .insert({
+          title: datos.title.trim(),
+          date: datos.date || null,
+          session: datos.session || null,
+          notes: datos.notes || null,
+          created_by: stateRef.current.currentUserId,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        const m = error.message.toLowerCase();
+        if (m.includes("does not exist")) return "Falta ejecutar pizarra.sql en Supabase.";
+        if (m.includes("policy") || m.includes("row-level")) return "Solo la administración puede crear pizarras.";
+        return error.message;
+      }
+
+      /* Una fila por curso, en el mismo orden que la hoja de papel. */
+      const filas = CURSOS.map((curso, i) => ({
+        pizarra_id: fila.id,
+        curso,
+        orden: i,
+      }));
+      const { error: errFilas } = await supabase.from("pizarra_filas").insert(filas);
+      if (errFilas) {
+        // Si los cursos no entraron, no dejamos una pizarra vacía a medias.
+        await supabase.from("pizarras").delete().eq("id", fila.id);
+        return errFilas.message;
+      }
+
+      logHistory("creó una pizarra de asignaciones", datos.title.trim(), "Evento");
+      await notify(
+        "Nueva pizarra de asignaciones",
+        `${currentUser?.name ?? "Alguien"} publicó "${datos.title.trim()}". Mira lo que le toca a tu curso.`,
+        "all",
+        { url: "/pizarra" }
+      );
+      await recargarPizarras();
+    },
+    [logHistory, notify, currentUser, recargarPizarras]
+  );
+
+  const guardarFilaPizarra: AppContextValue["guardarFilaPizarra"] = useCallback(
+    async (filaId, datos) => {
+      if (!supabase) return "Supabase no está configurado";
+      const { error } = await supabase.rpc("pizarra_guardar_fila", {
+        p_fila: filaId,
+        p_asignacion: datos.asignacion || null,
+        p_presupuesto: datos.presupuesto || null,
+        p_ayudante: datos.ayudante || null,
+      });
+      if (error) {
+        if (error.message.toLowerCase().includes("does not exist")) return "Falta ejecutar pizarra.sql en Supabase.";
+        return error.message;
+      }
+      await recargarPizarras();
+    },
+    [recargarPizarras]
+  );
+
+  const marcarFilaPizarra: AppContextValue["marcarFilaPizarra"] = useCallback(
+    async (filaId, hecho) => {
+      if (!supabase) return "Supabase no está configurado";
+      const { error } = await supabase.rpc("pizarra_marcar", { p_fila: filaId, p_hecho: hecho });
+      if (error) {
+        if (error.message.toLowerCase().includes("does not exist")) return "Falta ejecutar pizarra.sql en Supabase.";
+        return error.message;
+      }
+      await recargarPizarras();
+    },
+    [recargarPizarras]
+  );
+
+  const cambiarEstadoPizarra: AppContextValue["cambiarEstadoPizarra"] = useCallback(
+    async (pizarraId, status) => {
+      if (!supabase) return "Supabase no está configurado";
+      const { error } = await supabase.from("pizarras").update({ status }).eq("id", pizarraId);
+      if (error) return error.message;
+      await recargarPizarras();
+    },
+    [recargarPizarras]
+  );
+
+  const eliminarPizarra: AppContextValue["eliminarPizarra"] = useCallback(
+    async (pizarraId) => {
+      if (!supabase) return "Supabase no está configurado";
+      const previa = stateRef.current.pizarras.find((p) => p.id === pizarraId);
+      const { error } = await supabase.from("pizarras").delete().eq("id", pizarraId);
+      if (error) return error.message;
+      if (previa) logHistory("eliminó una pizarra de asignaciones", previa.title, "Evento");
+      await recargarPizarras();
+    },
+    [logHistory, recargarPizarras]
+  );
+
   const updateCalendarEntry: AppContextValue["updateCalendarEntry"] = useCallback(
     async (id, patch) => {
       if (!supabase) return;
@@ -1194,6 +1374,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (patch.customKind !== undefined) dbPatch.custom_kind = patch.customKind || null;
       const { error } = await supabase.from("calendar_entries").update(dbPatch).eq("id", id);
       if (error) return;
+
+      /* Sincronía en el otro sentido: si esta fecha viene de un evento del muro
+         y aquí le cambian el día o el nombre, el evento se actualiza también.
+         Sin esto, el calendario diría una cosa y el muro otra, y nadie sabría
+         cuál de las dos es la buena. */
+      const anterior = stateRef.current.calendar.find((c) => c.id === id);
+      if (anterior?.eventId && (patch.date !== undefined || patch.title !== undefined)) {
+        const arregloEvento: Record<string, unknown> = {};
+        if (patch.date !== undefined) arregloEvento.event_date = patch.date;
+        if (patch.title !== undefined) arregloEvento.name = patch.title;
+        if (Object.keys(arregloEvento).length > 0) {
+          await supabase.from("events").update(arregloEvento).eq("id", anterior.eventId);
+          setState((prev) => ({
+            ...prev,
+            events: prev.events.map((e) =>
+              e.id !== anterior.eventId
+                ? e
+                : {
+                    ...e,
+                    eventDate: patch.date ?? e.eventDate,
+                    name: patch.title ?? e.name,
+                  }
+            ),
+          }));
+        }
+      }
+
       setState((prev) => ({
         ...prev,
         calendar: prev.calendar.map((c) => (c.id === id ? { ...c, ...patch } : c)),
@@ -1600,6 +1807,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     fechaDeEvento,
     updateCalendarEntry,
     removeCalendarEntry,
+    crearPizarra,
+    guardarFilaPizarra,
+    marcarFilaPizarra,
+    cambiarEstadoPizarra,
+    eliminarPizarra,
     updateSettings,
     addUser,
     resetUserPassword,

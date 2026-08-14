@@ -134,3 +134,51 @@ export interface MonthNote {
   updatedAt: string;
   updatedBy?: string;
 }
+
+/* ---------------------------------------------------------------- */
+/* Pizarra de asignaciones: la hoja de la pared, hecha aplicación.   */
+/* ---------------------------------------------------------------- */
+
+/** Los cursos del colegio, en el orden en que van en la hoja de papel. */
+export const CURSOS = [
+  "Párvulo",
+  "PreKinder",
+  "Kinder",
+  "Preprimario",
+  "1er Grado",
+  "2do Grado",
+  "3er Grado A",
+  "3er Grado B",
+  "4to Grado",
+  "5to Grado",
+  "6to Grado A",
+  "6to Grado B",
+  "1ero Secundaria",
+  "2do Secundaria",
+  "3ero Secundaria",
+] as const;
+
+export interface PizarraFila {
+  id: string;
+  pizarraId: string;
+  curso: string;
+  orden: number;
+  asignacion?: string;
+  presupuesto?: string;
+  ayudante?: string;
+  hecho: boolean;
+  hechoPor?: string;
+  hechoAt?: string;
+}
+
+export interface Pizarra {
+  id: string;
+  title: string;
+  date?: string;
+  session?: string;
+  notes?: string;
+  status: "abierta" | "cerrada";
+  createdBy?: string;
+  createdAt: string;
+  filas: PizarraFila[];
+}
