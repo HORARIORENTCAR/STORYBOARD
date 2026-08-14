@@ -128,12 +128,13 @@ export function TaskFormModal({
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">Máximo de colaboradores</label>
+            {/* Un solo `min`: antes había dos y el primero quedaba muerto.
+                El tope son 40, el tamaño del personal del colegio. */}
             <input
               type="number"
-              min={1}
-              max={30}
-              className="input"
               min={Math.max(1, ocupados)}
+              max={40}
+              className="input"
               value={maxCollaborators}
               onChange={(e) => setMaxCollaborators(Number(e.target.value))}
             />
