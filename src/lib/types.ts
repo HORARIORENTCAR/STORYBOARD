@@ -113,6 +113,8 @@ export interface CalendarEntry {
   responsibles?: string;
   /** Nombre propio de la categoría cuando el tipo es "otro". */
   customKind?: string;
+  /** Si esta fecha salió de un evento del muro, aquí queda el vínculo. */
+  eventId?: string;
 }
 
 export interface AppNotification {

@@ -164,7 +164,7 @@ function mapMonthNote(r: any): MonthNote {
 }
 
 function mapCalendar(r: any): CalendarEntry {
-  return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined, description: r.description ?? undefined, responsibles: r.responsibles ?? undefined, customKind: r.custom_kind ?? undefined };
+  return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined, description: r.description ?? undefined, responsibles: r.responsibles ?? undefined, customKind: r.custom_kind ?? undefined, eventId: r.event_id ?? undefined };
 }
 function mapHistory(r: any): HistoryEntry {
   return { id: r.id, userId: r.user_id, action: r.action, detail: r.detail, type: r.type, createdAt: r.created_at };
@@ -251,6 +251,12 @@ interface AppContextValue extends StoredState {
   monthNote: (mes: string) => MonthNote | undefined;
   saveMonthNote: (mes: string, contenido: string) => Promise<string | void>;
   addCalendarEntry: (entry: Omit<CalendarEntry, "id">) => Promise<void>;
+  /** Lleva un evento del muro al calendario institucional. Siempre a petición. */
+  llevarEventoAlCalendario: (eventId: string) => Promise<string | void>;
+  /** Quita del calendario la fecha que salió de ese evento. */
+  quitarEventoDelCalendario: (eventId: string) => Promise<string | void>;
+  /** La fecha del calendario que corresponde a un evento, si existe. */
+  fechaDeEvento: (eventId: string) => CalendarEntry | undefined;
   updateCalendarEntry: (id: string, patch: Partial<Omit<CalendarEntry, "id">>) => Promise<void>;
   removeCalendarEntry: (id: string) => Promise<void>;
   updateSettings: (patch: Partial<InstitutionSettings>) => Promise<void>;
@@ -641,6 +647,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (patch.dueDate !== undefined) dbPatch.due_date = patch.dueDate;
       if (patch.status !== undefined) dbPatch.status = patch.status;
       await supabase.from("events").update(dbPatch).eq("id", id);
+
+      /* Si este evento está puesto en el calendario del colegio y le cambian la
+         fecha o el nombre, la fecha del calendario se corrige sola. Si no, el
+         calendario acabaría anunciando algo que ya no es verdad. */
+      if (patch.eventDate !== undefined || patch.name !== undefined) {
+        const enCalendario = stateRef.current.calendar.find((c) => c.eventId === id);
+        if (enCalendario) {
+          const arreglo: Record<string, unknown> = {};
+          if (patch.eventDate !== undefined) arreglo.date = patch.eventDate;
+          if (patch.name !== undefined) arreglo.title = patch.name;
+          if (Object.keys(arreglo).length > 0) {
+            await supabase.from("calendar_entries").update(arreglo).eq("id", enCalendario.id);
+            const { data: cal } = await supabase
+              .from("calendar_entries")
+              .select("*")
+              .order("date", { ascending: true });
+            if (cal) setState((prev) => ({ ...prev, calendar: cal.map(mapCalendar) }));
+          }
+        }
+      }
       if (patch.status && patch.status !== prevEvent?.status) {
         logHistory(patch.status === "publicado" ? "publicó el evento" : "cambió el estado de", prevEvent?.name ?? "", "Evento");
         const nombreEv = prevEvent?.name ?? "";
@@ -1108,6 +1134,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         description: entry.description ?? null,
         responsibles: entry.responsibles ?? null,
         custom_kind: entry.customKind ?? null,
+        event_id: entry.eventId ?? null,
       });
       logHistory("agregó al calendario institucional", entry.title, "Calendario");
       // La especificación pide avisar a todo el personal de cualquier cambio del calendario.
@@ -1122,6 +1149,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (data) setState((prev) => ({ ...prev, calendar: data.map(mapCalendar) }));
     },
     [logHistory, notify, currentUser]
+  );
+
+  /* ------------------------------------------------------------------ */
+  /* Llevar un evento al calendario. Nunca ocurre solo: alguien lo decide.  */
+  /* ------------------------------------------------------------------ */
+
+  const fechaDeEvento: AppContextValue["fechaDeEvento"] = useCallback(
+    (eventId) => state.calendar.find((c) => c.eventId === eventId),
+    [state.calendar]
+  );
+
+  const llevarEventoAlCalendario: AppContextValue["llevarEventoAlCalendario"] = useCallback(
+    async (eventId) => {
+      const evento = stateRef.current.events.find((e) => e.id === eventId);
+      if (!evento) return "No se encontró el evento.";
+      if (!evento.eventDate) return "El evento no tiene fecha, así que no se puede colocar en el calendario.";
+      if (stateRef.current.calendar.some((c) => c.eventId === eventId)) {
+        return "Ese evento ya está en el calendario.";
+      }
+      await addCalendarEntry({
+        date: evento.eventDate,
+        title: evento.name,
+        kind: "evento",
+        description: evento.description || undefined,
+        eventId,
+      });
+    },
+    [addCalendarEntry]
   );
 
   const updateCalendarEntry: AppContextValue["updateCalendarEntry"] = useCallback(
@@ -1172,6 +1227,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [state.calendar, logHistory, notify, currentUser]
+  );
+
+  const quitarEventoDelCalendario: AppContextValue["quitarEventoDelCalendario"] = useCallback(
+    async (eventId) => {
+      const fila = stateRef.current.calendar.find((c) => c.eventId === eventId);
+      if (!fila) return "Ese evento no está en el calendario.";
+      await removeCalendarEntry(fila.id);
+    },
+    [removeCalendarEntry]
   );
 
   const updateSettings: AppContextValue["updateSettings"] = useCallback(
@@ -1531,6 +1595,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     monthNote,
     saveMonthNote,
     addCalendarEntry,
+    llevarEventoAlCalendario,
+    quitarEventoDelCalendario,
+    fechaDeEvento,
     updateCalendarEntry,
     removeCalendarEntry,
     updateSettings,
