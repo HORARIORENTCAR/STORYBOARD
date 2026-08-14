@@ -14,6 +14,7 @@ import {
   TaskExecStatus,
 } from "./types";
 import { dueLabel, isDueSoon, shouldArchive } from "./task-helpers";
+import { comprimirImagen } from "./imagenes";
 
 interface InstitutionSettings {
   name: string;
@@ -221,7 +222,14 @@ interface AppContextValue extends StoredState {
    */
   notify: (title: string, detail: string, audience?: "all" | "admins" | string[]) => Promise<void>;
   setExecStatus: (taskId: string, status: TaskExecStatus) => Promise<string | void>;
-  addChatMessage: (taskId: string, text: string, adjuntos?: File[], destinatario?: string | null) => Promise<string | void>;
+  addChatMessage: (
+    taskId: string,
+    text: string,
+    adjuntos?: File[],
+    destinatario?: string | null,
+    /** Avisa qué archivo va subiendo, para poder mostrar "Enviando 2 de 3". */
+    alAvanzar?: (hecho: number, total: number, nombre: string) => void
+  ) => Promise<string | void>;
   /** Vuelve a traer la conversación de una tarea (al abrirla o tras inscribirse). */
   refreshTaskChat: (taskId: string) => Promise<void>;
   toggleReaction: (taskId: string, messageId: string, emoji: "👍" | "❤️" | "✅") => Promise<void>;
@@ -857,23 +865,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const esImagen = (f: File) => f.type.startsWith("image/");
 
   const addChatMessage: AppContextValue["addChatMessage"] = useCallback(
-    async (taskId, text, adjuntos = [], destinatario = null) => {
+    async (taskId, text, adjuntos = [], destinatario = null, alAvanzar) => {
       if (!supabase) return "Supabase no está configurado";
       const subidos: {
         id: string; type: "image" | "file"; name: string; url: string; uploadedBy: string; uploadedAt: string;
       }[] = [];
-      for (const f of adjuntos) {
+      for (let i = 0; i < adjuntos.length; i++) {
+        const original = adjuntos[i];
+        alAvanzar?.(i, adjuntos.length, original.name);
+
+        /* Las fotos se encogen antes de salir del teléfono. Sin esto, una foto
+           de 6 MB por datos móviles tarda una eternidad y a veces se corta. */
+        const f = original.type.startsWith("image/") ? await comprimirImagen(original) : original;
+
         const r = await uploadFile(f, `chat/${taskId}`);
-        if (typeof r === "string") return r;
+        if (typeof r === "string") {
+          // Decimos QUÉ archivo falló: con varios adjuntos, "no se pudo subir"
+          // a secas no le sirve de nada a nadie.
+          return adjuntos.length > 1 ? `«${original.name}»: ${r}` : r;
+        }
         subidos.push({
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          type: f.type.startsWith("image/") ? "image" : "file",
-          name: r.name,
+          type: original.type.startsWith("image/") ? "image" : "file",
+          name: original.name,
           url: r.url,
           uploadedBy: stateRef.current.currentUserId,
           uploadedAt: new Date().toISOString(),
         });
       }
+      alAvanzar?.(adjuntos.length, adjuntos.length, "");
       const { data, error } = await supabase.rpc("add_chat_message", {
         p_task_id: taskId,
         p_text: text,
@@ -953,8 +973,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const addEvidence: AppContextValue["addEvidence"] = useCallback(
     async (taskId, file) => {
       if (!supabase) return "Supabase no está configurado";
-      const subido = await uploadFile(file, `tareas/${taskId}`);
+      // Las evidencias son casi siempre fotos: también se encogen antes de subir.
+      const ligero = file.type.startsWith("image/") ? await comprimirImagen(file) : file;
+      const subido = await uploadFile(ligero, `tareas/${taskId}`);
       if (typeof subido === "string") return subido;
+      subido.name = file.name;
       const { error } = await supabase.rpc("add_evidence", {
         p_task_id: taskId,
         p_name: subido.name,

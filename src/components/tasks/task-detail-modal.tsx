@@ -27,6 +27,7 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
   const [tab, setTab] = useState<"detalle" | "chat" | "evidencias">("detalle");
   const [message, setMessage] = useState("");
   const [subiendo, setSubiendo] = useState(false);
+  const [progreso, setProgreso] = useState("");
   const [editOpen, setEditOpen] = useState(false);
   const [aviso, setAviso] = useState("");
   const [adjuntos, setAdjuntos] = useState<File[]>([]);
@@ -38,17 +39,20 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
   const chatDocRef = useRef<HTMLInputElement>(null);
 
   /** Sube uno o varios archivos como evidencia de la tarea. */
-  async function subirEvidencias(lista: FileList | null) {
+  async function subirEvidencias(lista: File[]) {
     if (!lista || lista.length === 0) return;
     setSubiendo(true);
     setAviso("");
-    for (const f of Array.from(lista)) {
+    for (let i = 0; i < lista.length; i++) {
+      const f = lista[i];
+      setProgreso(`Subiendo ${i + 1} de ${lista.length}: ${f.name}`);
       const err = await addEvidence(task.id, f);
       if (err) {
-        setAviso(err);
+        setAviso(lista.length > 1 ? `«${f.name}»: ${err}` : err);
         break;
       }
     }
+    setProgreso("");
     setSubiendo(false);
   }
   const [, forceTick] = useState(0);
@@ -133,9 +137,24 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
     if (!message.trim() && adjuntos.length === 0) return;
     setSubiendo(true);
     setAviso("");
-    const err = await addChatMessage(task.id, message.trim(), adjuntos, privadoPara);
+    setProgreso(adjuntos.length > 0 ? `Preparando ${adjuntos.length} archivo${adjuntos.length > 1 ? "s" : ""}...` : "");
+
+    const err = await addChatMessage(
+      task.id,
+      message.trim(),
+      adjuntos,
+      privadoPara,
+      (hecho, total, nombre) => {
+        if (total === 0) return;
+        setProgreso(hecho >= total ? "Enviando el mensaje..." : `Subiendo ${hecho + 1} de ${total}: ${nombre}`);
+      }
+    );
+
     setSubiendo(false);
+    setProgreso("");
     if (err) {
+      // No borramos ni el texto ni los adjuntos: así puede reintentar sin
+      // volver a escribirlo todo ni a buscar las fotos otra vez.
       setAviso(err);
       return;
     }
@@ -557,6 +576,12 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             </div>
           ) : (
           <div className="mt-3 border-t border-ink-100 pt-3">
+            {progreso && (
+              <div className="mb-2 flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-2.5">
+                <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-brand-300 border-t-brand-700" />
+                <span className="min-w-0 flex-1 truncate text-xs font-medium text-brand-800">{progreso}</span>
+              </div>
+            )}
             {adjuntos.length > 0 && (
               <div className="mb-2 flex flex-wrap gap-2">
                 {adjuntos.map((f, i) => (
@@ -616,6 +641,10 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             )}
 
             <form onSubmit={handleSend} className="flex items-center gap-2">
+              {/* OJO: hay que copiar los archivos a una variable ANTES de vaciar
+                  el campo. Si se hace al revés, React ejecuta la actualización
+                  un instante después, cuando la lista ya está vacía, y el
+                  archivo elegido se pierde sin dar ningún error. */}
               <input
                 ref={chatFotoRef}
                 type="file"
@@ -623,8 +652,9 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                 multiple
                 hidden
                 onChange={(e) => {
-                  setAdjuntos((prev) => [...prev, ...Array.from(e.target.files ?? [])]);
+                  const elegidos = Array.from(e.target.files ?? []);
                   e.target.value = "";
+                  if (elegidos.length > 0) setAdjuntos((prev) => [...prev, ...elegidos]);
                 }}
               />
               <input
@@ -633,8 +663,9 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
                 multiple
                 hidden
                 onChange={(e) => {
-                  setAdjuntos((prev) => [...prev, ...Array.from(e.target.files ?? [])]);
+                  const elegidos = Array.from(e.target.files ?? []);
                   e.target.value = "";
+                  if (elegidos.length > 0) setAdjuntos((prev) => [...prev, ...elegidos]);
                 }}
               />
               {companeros.length > 0 && (
@@ -705,6 +736,13 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             <p className="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700">{aviso}</p>
           )}
 
+          {progreso && (
+            <div className="flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-2.5">
+              <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-brand-300 border-t-brand-700" />
+              <span className="min-w-0 flex-1 truncate text-xs font-medium text-brand-800">{progreso}</span>
+            </div>
+          )}
+
           <input
             ref={fotoRef}
             type="file"
@@ -712,8 +750,9 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             multiple
             hidden
             onChange={(e) => {
-              subirEvidencias(e.target.files);
+              const elegidos = Array.from(e.target.files ?? []);
               e.target.value = "";
+              subirEvidencias(elegidos);
             }}
           />
           <input
@@ -722,8 +761,9 @@ export function TaskDetailModal({ open, onClose, task }: { open: boolean; onClos
             multiple
             hidden
             onChange={(e) => {
-              subirEvidencias(e.target.files);
+              const elegidos = Array.from(e.target.files ?? []);
               e.target.value = "";
+              subirEvidencias(elegidos);
             }}
           />
 
