@@ -10,8 +10,29 @@ import { EventStatusPill } from "@/components/ui/pills";
 import { Avatar } from "@/components/ui/avatar";
 import { ProgressBar } from "@/components/ui/progress";
 
+/**
+ * Cuánto falta para el evento, dicho como lo diría una persona.
+ * Sirve para que en el muro, ya ordenado por cercanía, se vea de un golpe
+ * qué corre prisa y qué ya pasó.
+ */
+function cuandoEs(fecha: string): { texto: string; tono: "hoy" | "pronto" | "normal" | "pasado" } | null {
+  if (!fecha) return null;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const cuando = new Date(fecha + "T00:00:00");
+  if (isNaN(cuando.getTime())) return null;
+
+  const dias = Math.round((cuando.getTime() - hoy.getTime()) / 86400000);
+  if (dias === 0) return { texto: "Hoy", tono: "hoy" };
+  if (dias === 1) return { texto: "Mañana", tono: "hoy" };
+  if (dias < 0) return { texto: dias === -1 ? "Ayer" : `Hace ${Math.abs(dias)} días`, tono: "pasado" };
+  if (dias <= 7) return { texto: `En ${dias} días`, tono: "pronto" };
+  return { texto: `En ${dias} días`, tono: "normal" };
+}
+
 export function EventCard({ event }: { event: SchoolEvent }) {
   const { tasksForEvent, userById } = useApp();
+  const plazo = cuandoEs(event.eventDate);
   const tasks = tasksForEvent(event.id);
   const progress = eventProgress(tasks);
   const tokens = colorTokens[event.color];
@@ -50,7 +71,25 @@ export function EventCard({ event }: { event: SchoolEvent }) {
             <span className="text-[9px] font-semibold uppercase text-ink-400">{formatMonthShort(event.eventDate)}</span>
           </div>
           <div className="min-w-0">
-            <h3 className="truncate text-[15px] font-semibold text-ink-900">{event.name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-[15px] font-semibold text-ink-900">{event.name}</h3>
+              {plazo && (
+                <span
+                  className={
+                    "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide " +
+                    (plazo.tono === "hoy"
+                      ? "bg-rose-100 text-rose-700"
+                      : plazo.tono === "pronto"
+                        ? "bg-amber-100 text-amber-800"
+                        : plazo.tono === "pasado"
+                          ? "bg-ink-100 text-ink-500"
+                          : "bg-ink-100 text-ink-600")
+                  }
+                >
+                  {plazo.texto}
+                </span>
+              )}
+            </div>
             <p className="line-clamp-2 text-[13px] text-ink-500">{event.description}</p>
           </div>
         </div>

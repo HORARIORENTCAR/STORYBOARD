@@ -562,7 +562,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     () => state.events.filter((e) => e.status === "publicado" || e.createdBy === currentUser?.id || isAdmin),
     [state.events, currentUser, isAdmin]
   );
-  const wallEvents = useMemo(() => state.events.filter((e) => e.status === "publicado"), [state.events]);
+  /**
+   * El muro se ordena por la fecha en que ocurre cada evento, no por cuándo se
+   * creó. Primero lo que está más cerca de suceder, que es lo que la gente
+   * necesita ver al abrir la aplicación.
+   *
+   * Lo que ya pasó pero sigue publicado se va al final, de lo más reciente a lo
+   * más antiguo: sigue estando accesible, pero deja de estorbar arriba.
+   */
+  const wallEvents = useMemo(() => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const publicados = state.events.filter((e) => e.status === "publicado");
+
+    const conFecha = publicados.filter((e) => !!e.eventDate);
+    const sinFecha = publicados.filter((e) => !e.eventDate);
+
+    const porVenir = conFecha
+      .filter((e) => e.eventDate >= hoy)
+      .sort((a, b) => a.eventDate.localeCompare(b.eventDate));
+
+    const yaPasaron = conFecha
+      .filter((e) => e.eventDate < hoy)
+      .sort((a, b) => b.eventDate.localeCompare(a.eventDate));
+
+    // Los que no tienen fecha van entre medias: no son urgentes, pero tampoco
+    // son pasado. Entre ellos, el más nuevo primero.
+    const huerfanos = sinFecha.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+
+    return [...porVenir, ...huerfanos, ...yaPasaron];
+  }, [state.events]);
   const myEvents = useMemo(() => state.events.filter((e) => e.createdBy === currentUser?.id), [state.events, currentUser]);
 
   const canEditEvent = useCallback((event: SchoolEvent) => isAdmin || event.createdBy === currentUser?.id, [isAdmin, currentUser]);
