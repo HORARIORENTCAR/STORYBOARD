@@ -1194,6 +1194,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (patch.customKind !== undefined) dbPatch.custom_kind = patch.customKind || null;
       const { error } = await supabase.from("calendar_entries").update(dbPatch).eq("id", id);
       if (error) return;
+
+      /* Sincronía en el otro sentido: si esta fecha viene de un evento del muro
+         y aquí le cambian el día o el nombre, el evento se actualiza también.
+         Sin esto, el calendario diría una cosa y el muro otra, y nadie sabría
+         cuál de las dos es la buena. */
+      const anterior = stateRef.current.calendar.find((c) => c.id === id);
+      if (anterior?.eventId && (patch.date !== undefined || patch.title !== undefined)) {
+        const arregloEvento: Record<string, unknown> = {};
+        if (patch.date !== undefined) arregloEvento.event_date = patch.date;
+        if (patch.title !== undefined) arregloEvento.name = patch.title;
+        if (Object.keys(arregloEvento).length > 0) {
+          await supabase.from("events").update(arregloEvento).eq("id", anterior.eventId);
+          setState((prev) => ({
+            ...prev,
+            events: prev.events.map((e) =>
+              e.id !== anterior.eventId
+                ? e
+                : {
+                    ...e,
+                    eventDate: patch.date ?? e.eventDate,
+                    name: patch.title ?? e.name,
+                  }
+            ),
+          }));
+        }
+      }
+
       setState((prev) => ({
         ...prev,
         calendar: prev.calendar.map((c) => (c.id === id ? { ...c, ...patch } : c)),

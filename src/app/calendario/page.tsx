@@ -324,6 +324,9 @@ export default function CalendarioPage() {
                         }}
                         className={cx("block cursor-pointer truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium hover:brightness-95", kindStyles[entry.kind])}
                       >
+                        {/* El punto indica que esa fecha viene de un evento del muro
+                            y que al tocarla se puede saltar a él. */}
+                        {entry.eventId && <span className="mr-1 font-bold">•</span>}
                         {entry.title}
                       </span>
                     ))}
@@ -437,7 +440,14 @@ export default function CalendarioPage() {
                     <span className="text-[9px] font-semibold uppercase text-ink-400">{formatMonthShort(entry.date)}</span>
                   </div>
                   <button onClick={() => setDetalle(entry)} className="min-w-0 flex-1 text-left">
-                    <p className="truncate text-sm font-medium text-ink-900 hover:text-brand-700">{entry.title}</p>
+                    <p className="truncate text-sm font-medium text-ink-900 hover:text-brand-700">
+                      {entry.eventId && (
+                        <span className="mr-1.5 rounded bg-brand-100 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-brand-700 align-middle">
+                          Evento
+                        </span>
+                      )}
+                      {entry.title}
+                    </p>
                     <span className={cx("mt-0.5 inline-block rounded-md px-1.5 py-0.5 text-[10px] font-medium", kindStyles[entry.kind])}>
                       {nombreTipo(entry)}
                     </span>
@@ -478,6 +488,16 @@ export default function CalendarioPage() {
         title={editandoFecha ? "Editar fecha" : detalle?.title ?? ""}
         size="sm"
       >
+        {detalle && editandoFecha && detalle.eventId && (
+          <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-3">
+            <Sprout className="mt-0.5 h-4 w-4 shrink-0 text-brand-700" />
+            <p className="text-xs leading-relaxed text-brand-900">
+              Esta fecha viene de un evento del muro. Si cambias el <strong>día</strong> o el{" "}
+              <strong>título</strong>, el evento se actualiza también, para que los dos digan lo mismo.
+            </p>
+          </div>
+        )}
+
         {detalle && editandoFecha && (
           <form
             onSubmit={async (e) => {

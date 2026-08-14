@@ -132,7 +132,12 @@ export default function EventDetailPage() {
   }
 
   function handleDelete() {
-    if (!window.confirm(`¿Eliminar "${event!.name}"? Se borrarán también sus tareas, chats y evidencias. No se puede deshacer.`)) return;
+    /* Si el evento está anunciado en el calendario del colegio, hay que decirlo:
+       la fecha NO se borra sola, se queda ahí como fecha suelta. */
+    const aviso = yaEnCalendario
+      ? ` Está anunciado en el calendario del colegio: esa fecha se quedará ahí como fecha normal, sin enlace al evento. Si no la quieres, quítala antes desde el botón "Quitar del calendario".`
+      : "";
+    if (!window.confirm(`¿Eliminar "${event!.name}"? Se borrarán también sus tareas, chats y evidencias. No se puede deshacer.${aviso}`)) return;
     deleteEvent(event!.id);
     router.push("/eventos");
   }
@@ -236,6 +241,16 @@ export default function EventDetailPage() {
               )}
               {/* Llevar al calendario: siempre a petición, nunca automático.
                   Si ya está, el mismo botón sirve para quitarlo. */}
+              {yaEnCalendario && (
+                <Link
+                  href="/calendario"
+                  title="Ver esta fecha en el calendario del colegio"
+                  className="btn-secondary"
+                >
+                  <CalendarClock className="h-4 w-4" /> Ver en el calendario
+                </Link>
+              )}
+
               {yaEnCalendario ? (
                 <button
                   onClick={async () => {
