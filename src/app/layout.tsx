@@ -4,7 +4,6 @@ import Script from "next/script";
 import "./globals.css";
 import { AppProviders } from "@/components/providers/app-providers";
 import { PwaSetup } from "@/components/pwa/pwa-setup";
-import { MarcaPruebas } from "@/components/pwa/marca-pruebas";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -76,7 +75,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <AppProviders>{children}</AppProviders>
         <PwaSetup />
-        <MarcaPruebas />
       </body>
     </html>
   );

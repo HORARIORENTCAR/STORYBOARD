@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Bell, Search, ChevronDown, UserCog, SlidersHorizontal, History, LogOut, Users2, Building2, ShieldCheck, X, ListChecks, Smartphone } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
+import { ChipPruebas } from "@/components/pwa/marca-pruebas";
 import { timeAgo, cx } from "@/lib/utils";
 
 export function Topbar() {
@@ -41,6 +42,9 @@ export function Topbar() {
 
   return (
     <header className="sticky top-0 z-20 flex items-center gap-4 border-b border-ink-100 bg-white/80 px-6 py-3.5 backdrop-blur">
+      {/* Solo aparece en la copia de pruebas. Va aquí dentro, ocupando su propio
+          hueco, para no taparle el paso a ningún botón. */}
+      <ChipPruebas />
       <div className="relative flex-1 max-w-xl">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
         <input

@@ -1,45 +1,44 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FlaskConical } from "lucide-react";
 
 /**
- * Aviso visible cuando la aplicación NO es la que usa el equipo.
+ * Señal de que esta NO es la aplicación que usa el equipo.
  *
- * Las dos direcciones se ven idénticas por dentro, así que es facilísimo creer
- * que estás probando cuando en realidad estás tocando lo que ve el colegio.
+ * Historia de dos intentos fallidos, para que no se repitan:
+ *  1. Un distintivo pequeño en una esquina: pasaba desapercibido.
+ *  2. Un marco naranja flotando sobre toda la pantalla: se veía perfectamente,
+ *     pero cualquier capa por encima acaba estorbando algún botón.
  *
- * Se dibuja como un MARCO NARANJA alrededor de toda la pantalla, con una
- * etiqueta arriba en el centro. Un distintivo pequeño en una esquina pasaba
- * desapercibido; un marco completo, no. Y como es solo un borde, no tapa
- * ningún botón ni contenido.
+ * La solución buena es esta: la marca va DENTRO de la barra superior, como un
+ * elemento más de la página. Se ve siempre, en todas las pantallas, y no puede
+ * taparle el paso a nada porque ocupa su propio sitio.
  */
 
 /** La dirección de verdad, la que usa el equipo. Todo lo demás es pruebas. */
 const DIRECCION_REAL = "storyboard-two-inky.vercel.app";
 
-export function MarcaPruebas() {
+export function useEsPruebas(): boolean {
   const [esPruebas, setEsPruebas] = useState(false);
-
   useEffect(() => {
     setEsPruebas(window.location.hostname !== DIRECCION_REAL);
   }, []);
+  return esPruebas;
+}
 
+/** Etiqueta naranja para colocar dentro de la barra superior. */
+export function ChipPruebas() {
+  const esPruebas = useEsPruebas();
   if (!esPruebas) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[70]">
-      {/* El marco: cuatro franjas naranjas pegadas a los bordes de la pantalla */}
-      <div className="absolute inset-x-0 top-0 h-1.5 bg-amber-500" />
-      <div className="absolute inset-x-0 bottom-0 h-1.5 bg-amber-500" />
-      <div className="absolute inset-y-0 left-0 w-1.5 bg-amber-500" />
-      <div className="absolute inset-y-0 right-0 w-1.5 bg-amber-500" />
-
-      {/* La etiqueta, colgando del borde superior, en el centro */}
-      <div className="absolute left-1/2 top-0 -translate-x-1/2 rounded-b-lg bg-amber-500 px-4 py-1 shadow-pop">
-        <span className="text-[11px] font-bold uppercase tracking-widest text-white">
-          Copia de pruebas
-        </span>
-      </div>
-    </div>
+    <span
+      className="flex shrink-0 items-center gap-1.5 rounded-full bg-amber-500 px-2.5 py-1"
+      title="Esta es la copia de pruebas. Lo que ves aquí todavía no lo tiene el equipo."
+    >
+      <FlaskConical className="h-3.5 w-3.5 text-white" />
+      <span className="text-[11px] font-bold uppercase tracking-wide text-white">Pruebas</span>
+    </span>
   );
 }
