@@ -15,6 +15,8 @@ import {
   CheckCircle2,
   RotateCcw,
   Archive,
+  CalendarPlus,
+  CalendarX,
 } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { useApp } from "@/lib/store";
@@ -37,10 +39,11 @@ const columns: { key: TaskExecStatus; label: string }[] = [
 export default function EventDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { eventById, tasksForEvent, userById, canSeeEvent, canEditEvent, updateEvent, deleteEvent, duplicateEvent, loading, settings } = useApp();
+  const { eventById, tasksForEvent, userById, canSeeEvent, canEditEvent, updateEvent, deleteEvent, duplicateEvent, loading, settings, llevarEventoAlCalendario, quitarEventoDelCalendario, fechaDeEvento } = useApp();
   const [editOpen, setEditOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [aviso, setAviso] = useState("");
+  const [enCalendario, setEnCalendario] = useState(false);
 
   const event = eventById(params.id);
 
@@ -84,6 +87,8 @@ export default function EventDetailPage() {
   const tokens = colorTokens[event.color];
   const creator = userById(event.createdBy);
   const editable = canEditEvent(event);
+  /** ¿Este evento ya tiene su fecha puesta en el calendario del colegio? */
+  const yaEnCalendario = !!fechaDeEvento(event.id);
   const eventoCerrado = event.status === "finalizado" || event.status === "archivado";
 
   /* ---------- Reglas del ciclo de vida del evento ---------- */
@@ -229,6 +234,47 @@ export default function EventDetailPage() {
                   <RotateCcw className="h-4 w-4" /> Desarchivar
                 </button>
               )}
+              {/* Llevar al calendario: siempre a petición, nunca automático.
+                  Si ya está, el mismo botón sirve para quitarlo. */}
+              {yaEnCalendario ? (
+                <button
+                  onClick={async () => {
+                    setAviso("");
+                    setEnCalendario(true);
+                    const err = await quitarEventoDelCalendario(event.id);
+                    setEnCalendario(false);
+                    setAviso(err ?? "Se quitó del calendario institucional.");
+                  }}
+                  disabled={enCalendario}
+                  title="Quitar esta fecha del calendario del colegio"
+                  className="btn-secondary"
+                >
+                  <CalendarX className="h-4 w-4" /> Quitar del calendario
+                </button>
+              ) : (
+                <button
+                  onClick={async () => {
+                    setAviso("");
+                    setEnCalendario(true);
+                    const err = await llevarEventoAlCalendario(event.id);
+                    setEnCalendario(false);
+                    setAviso(
+                      err ??
+                        "Listo, ya aparece en el calendario del colegio y se le avisó al equipo."
+                    );
+                  }}
+                  disabled={enCalendario || !event.eventDate}
+                  title={
+                    event.eventDate
+                      ? "Mostrarlo también en el calendario del colegio"
+                      : "El evento necesita una fecha para poder ir al calendario"
+                  }
+                  className="btn-secondary"
+                >
+                  <CalendarPlus className="h-4 w-4" /> Agregar al calendario
+                </button>
+              )}
+
               <button onClick={() => setEditOpen(true)} className="btn-secondary">
                 <Pencil className="h-4 w-4" /> Editar
               </button>

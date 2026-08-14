@@ -15,6 +15,7 @@ import {
 } from "./types";
 import { dueLabel, isDueSoon, shouldArchive } from "./task-helpers";
 import { comprimirImagen } from "./imagenes";
+import { avisarAlEquipo } from "./push";
 
 interface InstitutionSettings {
   name: string;
@@ -163,7 +164,7 @@ function mapMonthNote(r: any): MonthNote {
 }
 
 function mapCalendar(r: any): CalendarEntry {
-  return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined, description: r.description ?? undefined, responsibles: r.responsibles ?? undefined, customKind: r.custom_kind ?? undefined };
+  return { id: r.id, date: r.date, title: r.title, kind: r.kind, location: r.location ?? undefined, time: r.time ?? undefined, motto: r.motto ?? undefined, description: r.description ?? undefined, responsibles: r.responsibles ?? undefined, customKind: r.custom_kind ?? undefined, eventId: r.event_id ?? undefined };
 }
 function mapHistory(r: any): HistoryEntry {
   return { id: r.id, userId: r.user_id, action: r.action, detail: r.detail, type: r.type, createdAt: r.created_at };
@@ -220,7 +221,14 @@ interface AppContextValue extends StoredState {
    *  "admins" = solo los administradores
    *  array    = solo esas personas
    */
-  notify: (title: string, detail: string, audience?: "all" | "admins" | string[]) => Promise<void>;
+  notify: (
+    title: string,
+    detail: string,
+    audience?: "all" | "admins" | string[],
+    /** Si es true, además del aviso dentro de la app suena en el celular de todos.
+        Reservado a lo que interesa a todo el colegio: eventos, calendario y mural. */
+    alCelular?: { url?: string } | false
+  ) => Promise<void>;
   setExecStatus: (taskId: string, status: TaskExecStatus) => Promise<string | void>;
   addChatMessage: (
     taskId: string,
@@ -243,6 +251,12 @@ interface AppContextValue extends StoredState {
   monthNote: (mes: string) => MonthNote | undefined;
   saveMonthNote: (mes: string, contenido: string) => Promise<string | void>;
   addCalendarEntry: (entry: Omit<CalendarEntry, "id">) => Promise<void>;
+  /** Lleva un evento del muro al calendario institucional. Siempre a petición. */
+  llevarEventoAlCalendario: (eventId: string) => Promise<string | void>;
+  /** Quita del calendario la fecha que salió de ese evento. */
+  quitarEventoDelCalendario: (eventId: string) => Promise<string | void>;
+  /** La fecha del calendario que corresponde a un evento, si existe. */
+  fechaDeEvento: (eventId: string) => CalendarEntry | undefined;
   updateCalendarEntry: (id: string, patch: Partial<Omit<CalendarEntry, "id">>) => Promise<void>;
   removeCalendarEntry: (id: string) => Promise<void>;
   updateSettings: (patch: Partial<InstitutionSettings>) => Promise<void>;
@@ -437,6 +451,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, (payload: any) => {
+        /* Si llega un aviso nuevo mientras la app está abierta, el teléfono da un
+           toque corto. Con la app cerrada de esto se encarga el service worker. */
+        if (payload.eventType === "INSERT" && typeof navigator !== "undefined" && navigator.vibrate) {
+          try { navigator.vibrate(120); } catch { /* el aparato no vibra */ }
+        }
         setState((prev) => {
           const deleted = payload.eventType === "DELETE";
           const row = deleted ? payload.old : payload.new;
@@ -475,7 +494,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const notify: AppContextValue["notify"] = useCallback(async (title, detail, audience = "all") => {
+  const notify: AppContextValue["notify"] = useCallback(async (title, detail, audience = "all", alCelular = false) => {
     if (!supabase) return;
 
     const paraTodos = audience === "all";
@@ -497,6 +516,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       p_audience_all: paraTodos,
       p_audience_users: dest,
     });
+
+    /* Aviso al celular. Solo para lo que le importa a todo el colegio, y solo
+       cuando el aviso es para todos: nunca por tareas ni por el chat. */
+    if (alCelular && paraTodos) {
+      await avisarAlEquipo({
+        autorId: stateRef.current.currentUserId,
+        titulo: title,
+        detalle: detail,
+        url: alCelular.url,
+      });
+    }
   }, []);
 
   const liveTasks = useMemo(() => state.tasks.filter((t) => !t.archived), [state.tasks]);
@@ -538,7 +568,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     () => state.events.filter((e) => e.status === "publicado" || e.createdBy === currentUser?.id || isAdmin),
     [state.events, currentUser, isAdmin]
   );
-  const wallEvents = useMemo(() => state.events.filter((e) => e.status === "publicado"), [state.events]);
+  /**
+   * El muro se ordena por la fecha en que ocurre cada evento, no por cuándo se
+   * creó. Primero lo que está más cerca de suceder, que es lo que la gente
+   * necesita ver al abrir la aplicación.
+   *
+   * Lo que ya pasó pero sigue publicado se va al final, de lo más reciente a lo
+   * más antiguo: sigue estando accesible, pero deja de estorbar arriba.
+   */
+  const wallEvents = useMemo(() => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const publicados = state.events.filter((e) => e.status === "publicado");
+
+    const conFecha = publicados.filter((e) => !!e.eventDate);
+    const sinFecha = publicados.filter((e) => !e.eventDate);
+
+    const porVenir = conFecha
+      .filter((e) => e.eventDate >= hoy)
+      .sort((a, b) => a.eventDate.localeCompare(b.eventDate));
+
+    const yaPasaron = conFecha
+      .filter((e) => e.eventDate < hoy)
+      .sort((a, b) => b.eventDate.localeCompare(a.eventDate));
+
+    // Los que no tienen fecha van entre medias: no son urgentes, pero tampoco
+    // son pasado. Entre ellos, el más nuevo primero.
+    const huerfanos = sinFecha.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+
+    return [...porVenir, ...huerfanos, ...yaPasaron];
+  }, [state.events]);
   const myEvents = useMemo(() => state.events.filter((e) => e.createdBy === currentUser?.id), [state.events, currentUser]);
 
   const canEditEvent = useCallback((event: SchoolEvent) => isAdmin || event.createdBy === currentUser?.id, [isAdmin, currentUser]);
@@ -589,11 +647,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (patch.dueDate !== undefined) dbPatch.due_date = patch.dueDate;
       if (patch.status !== undefined) dbPatch.status = patch.status;
       await supabase.from("events").update(dbPatch).eq("id", id);
+
+      /* Si este evento está puesto en el calendario del colegio y le cambian la
+         fecha o el nombre, la fecha del calendario se corrige sola. Si no, el
+         calendario acabaría anunciando algo que ya no es verdad. */
+      if (patch.eventDate !== undefined || patch.name !== undefined) {
+        const enCalendario = stateRef.current.calendar.find((c) => c.eventId === id);
+        if (enCalendario) {
+          const arreglo: Record<string, unknown> = {};
+          if (patch.eventDate !== undefined) arreglo.date = patch.eventDate;
+          if (patch.name !== undefined) arreglo.title = patch.name;
+          if (Object.keys(arreglo).length > 0) {
+            await supabase.from("calendar_entries").update(arreglo).eq("id", enCalendario.id);
+            const { data: cal } = await supabase
+              .from("calendar_entries")
+              .select("*")
+              .order("date", { ascending: true });
+            if (cal) setState((prev) => ({ ...prev, calendar: cal.map(mapCalendar) }));
+          }
+        }
+      }
       if (patch.status && patch.status !== prevEvent?.status) {
         logHistory(patch.status === "publicado" ? "publicó el evento" : "cambió el estado de", prevEvent?.name ?? "", "Evento");
         const nombreEv = prevEvent?.name ?? "";
         if (patch.status === "publicado") {
-          await notify("Nuevo evento publicado", `currentUser?.name ?? "Alguien" publicó ${nombreEv}. Ya puedes inscribirte en sus tareas.`, "all");
+          await notify("Nuevo evento publicado", `${currentUser?.name ?? "Alguien"} publicó ${nombreEv}. Ya puedes inscribirte en sus tareas.`, "all", { url: `/eventos/${id}` });
         } else if (patch.status === "finalizado") {
           await notify("Evento finalizado", `${nombreEv} se dio por terminado.`, "all");
         } else if (patch.status === "archivado") {
@@ -626,7 +704,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         logHistory("eliminó el evento", event.name, "Evento");
         await notify(
           "Evento eliminado",
-          `currentUser?.name ?? "Alguien" eliminó ${event.name}`,
+          `${currentUser?.name ?? "Alguien"} eliminó ${event.name}`,
           event.status === "publicado" ? "all" : "admins"
         );
       }
@@ -1038,7 +1116,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       });
       logHistory("actualizó el mural del mes", mes, "Calendario");
-      await notify("Mural del mes actualizado", `currentUser?.name ?? "Alguien" escribió en el mural de ${mes}`, "all");
+      await notify("Mural del mes actualizado", `${currentUser?.name ?? "Alguien"} escribió en el mural de ${mes}`, "all", { url: "/calendario" });
     },
     [logHistory, notify, currentUser]
   );
@@ -1056,19 +1134,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         description: entry.description ?? null,
         responsibles: entry.responsibles ?? null,
         custom_kind: entry.customKind ?? null,
+        event_id: entry.eventId ?? null,
       });
       logHistory("agregó al calendario institucional", entry.title, "Calendario");
       // La especificación pide avisar a todo el personal de cualquier cambio del calendario.
       await notify(
         "Calendario institucional actualizado",
         `${currentUser?.name ?? "Alguien"} agregó "${entry.title}" el ${entry.date}`,
-        "all"
+        "all",
+        { url: "/calendario" }
       );
       // Recargar calendario (no está en el canal de tiempo real por simplicidad)
       const { data } = await supabase.from("calendar_entries").select("*").order("date", { ascending: true });
       if (data) setState((prev) => ({ ...prev, calendar: data.map(mapCalendar) }));
     },
     [logHistory, notify, currentUser]
+  );
+
+  /* ------------------------------------------------------------------ */
+  /* Llevar un evento al calendario. Nunca ocurre solo: alguien lo decide.  */
+  /* ------------------------------------------------------------------ */
+
+  const fechaDeEvento: AppContextValue["fechaDeEvento"] = useCallback(
+    (eventId) => state.calendar.find((c) => c.eventId === eventId),
+    [state.calendar]
+  );
+
+  const llevarEventoAlCalendario: AppContextValue["llevarEventoAlCalendario"] = useCallback(
+    async (eventId) => {
+      const evento = stateRef.current.events.find((e) => e.id === eventId);
+      if (!evento) return "No se encontró el evento.";
+      if (!evento.eventDate) return "El evento no tiene fecha, así que no se puede colocar en el calendario.";
+      if (stateRef.current.calendar.some((c) => c.eventId === eventId)) {
+        return "Ese evento ya está en el calendario.";
+      }
+      await addCalendarEntry({
+        date: evento.eventDate,
+        title: evento.name,
+        kind: "evento",
+        description: evento.description || undefined,
+        eventId,
+      });
+    },
+    [addCalendarEntry]
   );
 
   const updateCalendarEntry: AppContextValue["updateCalendarEntry"] = useCallback(
@@ -1095,7 +1203,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await notify(
         "Calendario institucional actualizado",
         `${currentUser?.name ?? "Alguien"} modificó "${patch.title ?? entry?.title ?? ""}"`,
-        "all"
+        "all",
+        { url: "/calendario" }
       );
     },
     [logHistory, notify, currentUser]
@@ -1112,11 +1221,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await notify(
           "Calendario institucional actualizado",
           `${currentUser?.name ?? "Alguien"} eliminó "${entry.title}" del ${entry.date}`,
-          "all"
+          "all",
+        { url: "/calendario" }
         );
       }
     },
     [state.calendar, logHistory, notify, currentUser]
+  );
+
+  const quitarEventoDelCalendario: AppContextValue["quitarEventoDelCalendario"] = useCallback(
+    async (eventId) => {
+      const fila = stateRef.current.calendar.find((c) => c.eventId === eventId);
+      if (!fila) return "Ese evento no está en el calendario.";
+      await removeCalendarEntry(fila.id);
+    },
+    [removeCalendarEntry]
   );
 
   const updateSettings: AppContextValue["updateSettings"] = useCallback(
@@ -1141,13 +1260,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // El calendario oficial le interesa a todo el personal.
         await notify(
           "Calendario oficial actualizado",
-          `currentUser?.name ?? "Alguien" subió el calendario oficial del colegio`,
+          `${currentUser?.name ?? "Alguien"} subió el calendario oficial del colegio`,
           "all"
         );
       } else if (patch.officialCalendarUrl === "") {
-        await notify("Calendario oficial", `currentUser?.name ?? "Alguien" quitó el calendario oficial`, "admins");
+        await notify("Calendario oficial", `${currentUser?.name ?? "Alguien"} quitó el calendario oficial`, "admins");
       } else {
-        await notify("Configuración institucional", `currentUser?.name ?? "Alguien" cambió los ajustes de la plataforma`, "admins");
+        await notify("Configuración institucional", `${currentUser?.name ?? "Alguien"} cambió los ajustes de la plataforma`, "admins");
       }
     },
     [state.settings, logHistory, notify, currentUser]
@@ -1170,7 +1289,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const body = await res.json();
       if (!res.ok) return { error: body.error ?? "No se pudo crear la cuenta." };
       logHistory("agregó al colaborador", data.name, "Equipo");
-      await notify("Nueva persona en el equipo", `currentUser?.name ?? "Alguien" agregó a ${data.name} (${data.email})`, "admins");
+      await notify("Nueva persona en el equipo", `${currentUser?.name ?? "Alguien"} agregó a ${data.name} (${data.email})`, "admins");
       await recargarPersonal();
       return { credenciales: { nombre: data.name, email: body.email, password: body.password } };
     },
@@ -1292,7 +1411,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await recargarPersonal();
 
       if (!res.ok) return body.error ?? "No se pudo eliminar a esa persona.";
-      await notify("Persona eliminada del equipo", `currentUser?.name ?? "Alguien" eliminó a ${persona?.name ?? "un colaborador"}`, "admins");
+      await notify("Persona eliminada del equipo", `${currentUser?.name ?? "Alguien"} eliminó a ${persona?.name ?? "un colaborador"}`, "admins");
       if (body.aviso) return body.aviso;
     },
     [recargarPersonal, notify, currentUser]
@@ -1476,6 +1595,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     monthNote,
     saveMonthNote,
     addCalendarEntry,
+    llevarEventoAlCalendario,
+    quitarEventoDelCalendario,
+    fechaDeEvento,
     updateCalendarEntry,
     removeCalendarEntry,
     updateSettings,

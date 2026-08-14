@@ -7,6 +7,7 @@ import { Shell } from "@/components/shell/shell";
 import { PageHeader } from "@/components/ui/page-header";
 import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
+import { AvisosCelular } from "@/components/pwa/avisos-celular";
 
 export default function PerfilPage() {
   const { currentUser, settings, updateProfile, changeMyPassword } = useApp();
@@ -70,6 +71,8 @@ export default function PerfilPage() {
         </div>
       </div>
     
+      <AvisosCelular />
+
       <div className="card mt-6 max-w-2xl p-5 sm:p-6">
         <p className="text-sm font-bold text-ink-900">Cambiar mi contraseña</p>
         <p className="mt-0.5 text-xs text-ink-500">

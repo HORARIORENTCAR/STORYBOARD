@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { autocorregir } from "@/lib/ortografia";
 import { ChevronLeft, ChevronRight, Plus, Download, Sprout, Trash2, Upload, FileText, X, Pencil, StickyNote } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
@@ -629,6 +630,25 @@ export default function CalendarioPage() {
                 </span>
               )}
             </div>
+
+            {/* Si esta fecha salió de un evento del muro, se puede ir a él. */}
+            {detalle.eventId && (
+              <Link
+                href={`/eventos/${detalle.eventId}`}
+                onClick={() => setDetalle(null)}
+                className="flex items-center justify-between gap-3 rounded-xl border border-ink-200 bg-ink-50 px-3.5 py-3 hover:border-brand-400 hover:bg-brand-50/50"
+              >
+                <span className="min-w-0">
+                  <span className="block text-xs font-semibold uppercase tracking-wide text-ink-400">
+                    Viene de un evento del muro
+                  </span>
+                  <span className="block truncate text-sm font-medium text-ink-900">
+                    Ver el evento y sus tareas
+                  </span>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-ink-400" />
+              </Link>
+            )}
 
             {detalle.responsibles && (
               <div className="rounded-xl border border-brand-200 bg-brand-50 px-3.5 py-2.5">
