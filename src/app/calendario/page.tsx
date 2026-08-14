@@ -337,7 +337,12 @@ export default function CalendarioPage() {
                     {dayEntries.slice(0, 4).map((entry) => (
                       <span
                         key={entry.id}
-                        className={cx("h-1.5 w-1.5 rounded-full", puntoColor[entry.kind])}
+                        className={cx(
+                          "h-1.5 w-1.5 rounded-full",
+                          puntoColor[entry.kind],
+                          // Los que vienen de un evento llevan un aro: se puede entrar a ellos.
+                          entry.eventId && "ring-2 ring-brand-200"
+                        )}
                       />
                     ))}
                     {dayEntries.length > 4 && (
@@ -401,28 +406,39 @@ export default function CalendarioPage() {
               ) : (
                 <div className="space-y-2">
                   {(entriesByDay.get(Number(diaAbierto.slice(8))) ?? []).map((entry) => (
-                    <button
+                    <div
                       key={entry.id}
-                      onClick={() => setDetalle(entry)}
-                      className="flex w-full items-start gap-2.5 rounded-xl border border-ink-100 bg-white px-3.5 py-3 text-left hover:border-brand-400"
+                      className="rounded-xl border border-ink-100 bg-white px-3.5 py-3"
                     >
-                      <span className={cx("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", puntoColor[entry.kind])} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-ink-900">{entry.title}</span>
-                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-500">
-                          <span className={cx("rounded px-1.5 py-0.5 text-[10px] font-medium", kindStyles[entry.kind])}>
-                            {nombreTipo(entry)}
+                      <button
+                        onClick={() => setDetalle(entry)}
+                        className="flex w-full items-start gap-2.5 text-left"
+                      >
+                        <span className={cx("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", puntoColor[entry.kind])} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold text-ink-900">{entry.title}</span>
+                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-500">
+                            <span className={cx("rounded px-1.5 py-0.5 text-[10px] font-medium", kindStyles[entry.kind])}>
+                              {nombreTipo(entry)}
+                            </span>
+                            {entry.time && <span>{entry.time}</span>}
+                            {entry.location && <span>{entry.location}</span>}
                           </span>
-                          {entry.time && <span>{entry.time}</span>}
-                          {entry.location && <span>{entry.location}</span>}
                         </span>
-                        {entry.eventId && (
-                          <span className="mt-1 block text-[11px] font-medium text-brand-700">
-                            Viene de un evento del muro
-                          </span>
-                        )}
-                      </span>
-                    </button>
+                      </button>
+
+                      {/* Acceso DIRECTO al evento, sin pasar por la ventana de detalle.
+                          Antes esto era solo un texto que parecía enlace y no lo era. */}
+                      {entry.eventId && (
+                        <Link
+                          href={`/eventos/${entry.eventId}`}
+                          className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-800 hover:bg-brand-100"
+                        >
+                          <span>Abrir el evento y sus tareas</span>
+                          <ChevronRight className="h-4 w-4 shrink-0" />
+                        </Link>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
