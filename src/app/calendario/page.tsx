@@ -36,6 +36,17 @@ const kindStyles: Record<CalendarEntry["kind"], string> = {
   otro: "bg-teal-100 text-teal-800",
 };
 
+/** Color del puntito que representa cada tipo en la vista del celular. */
+const puntoColor: Record<CalendarEntry["kind"], string> = {
+  evento: "bg-brand-500",
+  fecha: "bg-sky-500",
+  valor: "bg-amber-500",
+  reunion: "bg-rose-500",
+  capacitacion: "bg-violet-500",
+  informe: "bg-ink-400",
+  otro: "bg-teal-500",
+};
+
 const WEEKDAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
 function buildMonthGrid(year: number, month: number) {
@@ -77,6 +88,8 @@ export default function CalendarioPage() {
   const [avisoOficial, setAvisoOficial] = useState("");
   const oficialRef = useRef<HTMLInputElement>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  /** Día que la persona tocó en la cuadrícula, para verlo en grande debajo. */
+  const [diaAbierto, setDiaAbierto] = useState<string | null>(null);
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -286,26 +299,54 @@ export default function CalendarioPage() {
               </div>
             ))}
           </div>
-          <div className="mt-1 grid grid-cols-7 gap-2">
+          <div className="mt-1 grid grid-cols-7 gap-1 sm:gap-2">
             {cells.map((day, idx) => {
-              if (day === null) return <div key={idx} className="min-h-[92px] rounded-xl" />;
+              if (day === null)
+                return <div key={idx} className="min-h-[54px] rounded-xl sm:min-h-[92px]" />;
               const dayEntries = entriesByDay.get(day) ?? [];
+              const fechaDia = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
               const isToday = year === ahora.getFullYear() && month === ahora.getMonth() && day === ahora.getDate();
+              const elegido = diaAbierto === fechaDia;
               return (
                 <button
                   key={idx}
-                  onClick={() => {
-                    if (!isAdmin) return;
-                    setSelectedDate(`${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
-                    setCreateOpen(true);
-                  }}
+                  /* Tocar un día lo abre debajo, con sus fechas completas y legibles.
+                     En el celular no hay forma de leer texto dentro de una casilla
+                     de 45 píxeles: por eso arriba solo van puntos de color. */
+                  onClick={() => setDiaAbierto(elegido ? null : fechaDia)}
                   className={cx(
-                    "flex min-h-[92px] flex-col rounded-xl border p-2 text-left transition-colors hover:border-brand-300",
-                    isToday ? "border-brand-500 bg-brand-50" : "border-ink-100"
+                    "flex min-h-[54px] flex-col items-center rounded-xl border p-1 text-left transition-colors hover:border-brand-300 sm:min-h-[92px] sm:items-stretch sm:p-2",
+                    elegido
+                      ? "border-brand-500 ring-2 ring-brand-200"
+                      : isToday
+                        ? "border-brand-500 bg-brand-50"
+                        : "border-ink-100"
                   )}
                 >
-                  <span className={cx("text-xs font-semibold", isToday ? "text-brand-700" : "text-ink-500")}>{day}</span>
-                  <div className="mt-1 space-y-1">
+                  <span
+                    className={cx(
+                      "text-xs font-semibold",
+                      isToday ? "text-brand-700" : "text-ink-500"
+                    )}
+                  >
+                    {day}
+                  </span>
+
+                  {/* CELULAR: puntos de color, uno por fecha (hasta 4) */}
+                  <span className="mt-1 flex flex-wrap justify-center gap-1 sm:hidden">
+                    {dayEntries.slice(0, 4).map((entry) => (
+                      <span
+                        key={entry.id}
+                        className={cx("h-1.5 w-1.5 rounded-full", puntoColor[entry.kind])}
+                      />
+                    ))}
+                    {dayEntries.length > 4 && (
+                      <span className="text-[9px] leading-none text-ink-400">+</span>
+                    )}
+                  </span>
+
+                  {/* PANTALLA GRANDE: los títulos, que sí caben */}
+                  <div className="mt-1 hidden space-y-1 sm:block">
                     {dayEntries.slice(0, 2).map((entry) => (
                       <span
                         key={entry.id}
@@ -324,8 +365,6 @@ export default function CalendarioPage() {
                         }}
                         className={cx("block cursor-pointer truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium hover:brightness-95", kindStyles[entry.kind])}
                       >
-                        {/* El punto indica que esa fecha viene de un evento del muro
-                            y que al tocarla se puede saltar a él. */}
                         {entry.eventId && <span className="mr-1 font-bold">•</span>}
                         {entry.title}
                       </span>
@@ -336,6 +375,71 @@ export default function CalendarioPage() {
               );
             })}
           </div>
+
+          {/* El día abierto, con todo legible. Aquí no hay límite de ancho. */}
+          {diaAbierto && (
+            <div className="mt-4 rounded-2xl border border-brand-200 bg-brand-50/50 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-bold text-ink-900">
+                  {new Date(diaAbierto + "T00:00:00").toLocaleDateString("es-DO", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                  })}
+                </p>
+                <button
+                  onClick={() => setDiaAbierto(null)}
+                  aria-label="Cerrar el día"
+                  className="rounded-lg p-1 text-ink-400 hover:bg-ink-100"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {(entriesByDay.get(Number(diaAbierto.slice(8))) ?? []).length === 0 ? (
+                <p className="text-sm text-ink-500">No hay nada anotado este día.</p>
+              ) : (
+                <div className="space-y-2">
+                  {(entriesByDay.get(Number(diaAbierto.slice(8))) ?? []).map((entry) => (
+                    <button
+                      key={entry.id}
+                      onClick={() => setDetalle(entry)}
+                      className="flex w-full items-start gap-2.5 rounded-xl border border-ink-100 bg-white px-3.5 py-3 text-left hover:border-brand-400"
+                    >
+                      <span className={cx("mt-1 h-2.5 w-2.5 shrink-0 rounded-full", puntoColor[entry.kind])} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-ink-900">{entry.title}</span>
+                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-500">
+                          <span className={cx("rounded px-1.5 py-0.5 text-[10px] font-medium", kindStyles[entry.kind])}>
+                            {nombreTipo(entry)}
+                          </span>
+                          {entry.time && <span>{entry.time}</span>}
+                          {entry.location && <span>{entry.location}</span>}
+                        </span>
+                        {entry.eventId && (
+                          <span className="mt-1 block text-[11px] font-medium text-brand-700">
+                            Viene de un evento del muro
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    setSelectedDate(diaAbierto);
+                    setCreateOpen(true);
+                  }}
+                  className="btn-secondary mt-3 w-full !py-2 !text-sm"
+                >
+                  <Plus className="h-4 w-4" /> Agregar algo este día
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="space-y-5">
