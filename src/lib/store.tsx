@@ -15,6 +15,7 @@ import {
 } from "./types";
 import { dueLabel, isDueSoon, shouldArchive } from "./task-helpers";
 import { comprimirImagen } from "./imagenes";
+import { avisarAlEquipo } from "./push";
 
 interface InstitutionSettings {
   name: string;
@@ -220,7 +221,14 @@ interface AppContextValue extends StoredState {
    *  "admins" = solo los administradores
    *  array    = solo esas personas
    */
-  notify: (title: string, detail: string, audience?: "all" | "admins" | string[]) => Promise<void>;
+  notify: (
+    title: string,
+    detail: string,
+    audience?: "all" | "admins" | string[],
+    /** Si es true, además del aviso dentro de la app suena en el celular de todos.
+        Reservado a lo que interesa a todo el colegio: eventos, calendario y mural. */
+    alCelular?: { url?: string } | false
+  ) => Promise<void>;
   setExecStatus: (taskId: string, status: TaskExecStatus) => Promise<string | void>;
   addChatMessage: (
     taskId: string,
@@ -437,6 +445,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, (payload: any) => {
+        /* Si llega un aviso nuevo mientras la app está abierta, el teléfono da un
+           toque corto. Con la app cerrada de esto se encarga el service worker. */
+        if (payload.eventType === "INSERT" && typeof navigator !== "undefined" && navigator.vibrate) {
+          try { navigator.vibrate(120); } catch { /* el aparato no vibra */ }
+        }
         setState((prev) => {
           const deleted = payload.eventType === "DELETE";
           const row = deleted ? payload.old : payload.new;
@@ -475,7 +488,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const notify: AppContextValue["notify"] = useCallback(async (title, detail, audience = "all") => {
+  const notify: AppContextValue["notify"] = useCallback(async (title, detail, audience = "all", alCelular = false) => {
     if (!supabase) return;
 
     const paraTodos = audience === "all";
@@ -497,6 +510,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       p_audience_all: paraTodos,
       p_audience_users: dest,
     });
+
+    /* Aviso al celular. Solo para lo que le importa a todo el colegio, y solo
+       cuando el aviso es para todos: nunca por tareas ni por el chat. */
+    if (alCelular && paraTodos) {
+      await avisarAlEquipo({
+        autorId: stateRef.current.currentUserId,
+        titulo: title,
+        detalle: detail,
+        url: alCelular.url,
+      });
+    }
   }, []);
 
   const liveTasks = useMemo(() => state.tasks.filter((t) => !t.archived), [state.tasks]);
@@ -593,7 +617,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         logHistory(patch.status === "publicado" ? "publicó el evento" : "cambió el estado de", prevEvent?.name ?? "", "Evento");
         const nombreEv = prevEvent?.name ?? "";
         if (patch.status === "publicado") {
-          await notify("Nuevo evento publicado", `currentUser?.name ?? "Alguien" publicó ${nombreEv}. Ya puedes inscribirte en sus tareas.`, "all");
+          await notify("Nuevo evento publicado", `${currentUser?.name ?? "Alguien"} publicó ${nombreEv}. Ya puedes inscribirte en sus tareas.`, "all", { url: `/eventos/${id}` });
         } else if (patch.status === "finalizado") {
           await notify("Evento finalizado", `${nombreEv} se dio por terminado.`, "all");
         } else if (patch.status === "archivado") {
@@ -626,7 +650,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         logHistory("eliminó el evento", event.name, "Evento");
         await notify(
           "Evento eliminado",
-          `currentUser?.name ?? "Alguien" eliminó ${event.name}`,
+          `${currentUser?.name ?? "Alguien"} eliminó ${event.name}`,
           event.status === "publicado" ? "all" : "admins"
         );
       }
@@ -1038,7 +1062,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         };
       });
       logHistory("actualizó el mural del mes", mes, "Calendario");
-      await notify("Mural del mes actualizado", `currentUser?.name ?? "Alguien" escribió en el mural de ${mes}`, "all");
+      await notify("Mural del mes actualizado", `${currentUser?.name ?? "Alguien"} escribió en el mural de ${mes}`, "all", { url: "/calendario" });
     },
     [logHistory, notify, currentUser]
   );
@@ -1062,7 +1086,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await notify(
         "Calendario institucional actualizado",
         `${currentUser?.name ?? "Alguien"} agregó "${entry.title}" el ${entry.date}`,
-        "all"
+        "all",
+        { url: "/calendario" }
       );
       // Recargar calendario (no está en el canal de tiempo real por simplicidad)
       const { data } = await supabase.from("calendar_entries").select("*").order("date", { ascending: true });
@@ -1095,7 +1120,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await notify(
         "Calendario institucional actualizado",
         `${currentUser?.name ?? "Alguien"} modificó "${patch.title ?? entry?.title ?? ""}"`,
-        "all"
+        "all",
+        { url: "/calendario" }
       );
     },
     [logHistory, notify, currentUser]
@@ -1112,7 +1138,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await notify(
           "Calendario institucional actualizado",
           `${currentUser?.name ?? "Alguien"} eliminó "${entry.title}" del ${entry.date}`,
-          "all"
+          "all",
+        { url: "/calendario" }
         );
       }
     },
@@ -1141,13 +1168,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         // El calendario oficial le interesa a todo el personal.
         await notify(
           "Calendario oficial actualizado",
-          `currentUser?.name ?? "Alguien" subió el calendario oficial del colegio`,
+          `${currentUser?.name ?? "Alguien"} subió el calendario oficial del colegio`,
           "all"
         );
       } else if (patch.officialCalendarUrl === "") {
-        await notify("Calendario oficial", `currentUser?.name ?? "Alguien" quitó el calendario oficial`, "admins");
+        await notify("Calendario oficial", `${currentUser?.name ?? "Alguien"} quitó el calendario oficial`, "admins");
       } else {
-        await notify("Configuración institucional", `currentUser?.name ?? "Alguien" cambió los ajustes de la plataforma`, "admins");
+        await notify("Configuración institucional", `${currentUser?.name ?? "Alguien"} cambió los ajustes de la plataforma`, "admins");
       }
     },
     [state.settings, logHistory, notify, currentUser]
@@ -1170,7 +1197,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const body = await res.json();
       if (!res.ok) return { error: body.error ?? "No se pudo crear la cuenta." };
       logHistory("agregó al colaborador", data.name, "Equipo");
-      await notify("Nueva persona en el equipo", `currentUser?.name ?? "Alguien" agregó a ${data.name} (${data.email})`, "admins");
+      await notify("Nueva persona en el equipo", `${currentUser?.name ?? "Alguien"} agregó a ${data.name} (${data.email})`, "admins");
       await recargarPersonal();
       return { credenciales: { nombre: data.name, email: body.email, password: body.password } };
     },
@@ -1292,7 +1319,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       await recargarPersonal();
 
       if (!res.ok) return body.error ?? "No se pudo eliminar a esa persona.";
-      await notify("Persona eliminada del equipo", `currentUser?.name ?? "Alguien" eliminó a ${persona?.name ?? "un colaborador"}`, "admins");
+      await notify("Persona eliminada del equipo", `${currentUser?.name ?? "Alguien"} eliminó a ${persona?.name ?? "un colaborador"}`, "admins");
       if (body.aviso) return body.aviso;
     },
     [recargarPersonal, notify, currentUser]
