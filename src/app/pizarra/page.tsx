@@ -253,10 +253,10 @@ export default function PizarraPage() {
               />
             </div>
             <div>
-              <label className="label">Sesión</label>
+              <label className="label">Horario</label>
               <input
                 className="input"
-                placeholder="Mañana, tarde, primera sesión..."
+                placeholder="10:00 a.m., mañana, tarde..."
                 value={borrador.session}
                 onChange={(e) => setBorrador({ ...borrador, session: autocorregir(e.target.value) })}
               />
