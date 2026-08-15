@@ -118,7 +118,7 @@ export function MobileNav() {
             <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wider text-ink-400">
               Mi espacio personal
             </p>
-            {sheetItem("/pizarra", ClipboardList, "Pizarra de asignaciones")}
+            {sheetItem("/pizarra", ClipboardList, "La Pizarra")}
             {sheetItem("/agenda", ClipboardCheck, "Mi agenda")}
             {sheetItem("/historial", History, "Historial de actividad")}
             {sheetItem("/perfil", UserCog, "Mi perfil")}

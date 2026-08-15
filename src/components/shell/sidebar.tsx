@@ -29,7 +29,7 @@ const workspaceNav = [
   { href: "/espacio", label: "Mi espacio", icon: FolderOpen },
   { href: "/tareas", label: "Mis tareas", icon: ListChecks, countKey: "tasks" as const },
   { href: "/calendario", label: "Calendario", icon: Calendar },
-  { href: "/pizarra", label: "Pizarra", icon: ClipboardList },
+  { href: "/pizarra", label: "La Pizarra", icon: ClipboardList },
   { href: "/agenda", label: "Mi agenda", icon: ClipboardCheck },
   { href: "/historial", label: "Historial", icon: History },
 ];
