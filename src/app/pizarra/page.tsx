@@ -49,7 +49,6 @@ export default function PizarraPage() {
   const {
     pizarras,
     isAdmin,
-    currentUser,
     userById,
     crearPizarra,
     guardarFilaPizarra,
@@ -107,7 +106,6 @@ export default function PizarraPage() {
   const propsComunes = (p: Pizarra) => ({
     pizarra: p,
     isAdmin,
-    esMia: p.createdBy === currentUser?.id,
     userById,
     onEditarFila: abrirEdicion,
     onMarcar: async (fila: PizarraFila, hecho: boolean) => {
@@ -179,7 +177,8 @@ export default function PizarraPage() {
             </PasoAyuda>
             <PasoAyuda numero={2}>
               <b className="font-semibold text-ink-900">Dentro, cada curso tiene su encargo</b> con
-              la cuenta que se usa y quién ayuda. Eso lo escribe la administración.
+              la cuenta que se usa. Eso lo puede escribir cualquiera del equipo; el ayudante lo
+              asigna la administración.
             </PasoAyuda>
             <PasoAyuda numero={3}>
               <b className="font-semibold text-ink-900">Cuando algo ya esté hecho, márcalo.</b> Eso
@@ -312,11 +311,19 @@ export default function PizarraPage() {
             <div>
               <label className="label">¿Quién ayuda?</label>
               <input
-                className="input"
-                placeholder="Ana"
+                className="input disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-500"
+                placeholder={isAdmin ? "Ana" : "Lo asigna la administración"}
+                disabled={!isAdmin}
                 value={edicion.ayudante}
                 onChange={(e) => setEdicion({ ...edicion, ayudante: autocorregir(e.target.value) })}
               />
+              {!isAdmin && (
+                <p className="mt-1.5 flex items-start gap-1.5 text-[13px] leading-relaxed text-ink-500">
+                  <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  Escribir un encargo es contar lo que hay que hacer; poner aquí el nombre de
+                  alguien compromete su tiempo. Eso lo decide la administración.
+                </p>
+              )}
             </div>
           </div>
           <p className="text-[13px] leading-relaxed text-ink-500">
@@ -352,7 +359,6 @@ function PasoAyuda({ numero, children }: { numero: number; children: React.React
 function TarjetaPizarra({
   pizarra,
   isAdmin,
-  esMia,
   userById,
   onEditarFila,
   onMarcar,
@@ -361,15 +367,16 @@ function TarjetaPizarra({
 }: {
   pizarra: Pizarra;
   isAdmin: boolean;
-  esMia: boolean;
   userById: (id: string) => { name: string; color?: string } | undefined;
   onEditarFila: (fila: PizarraFila) => void;
   onMarcar: (fila: PizarraFila, hecho: boolean) => void;
   onCambiarEstado: (estado: "abierta" | "cerrada") => void;
   onEliminar: () => void;
 }) {
-  const puedeEscribir = (isAdmin || esMia) && pizarra.status === "abierta";
   const cerrada = pizarra.status === "cerrada";
+  /* Escribir dentro de la pizarra lo puede hacer cualquiera del equipo
+     mientras esté abierta. Cerrarla, reabrirla y eliminarla, solo administración. */
+  const puedeEscribir = !cerrada;
 
   /* Los cursos con algo asignado van primero; los vacíos, apagados al final. */
   const conAsignacion = pizarra.filas.filter((f) => (f.asignacion ?? "").trim().length > 0);
@@ -404,7 +411,7 @@ function TarjetaPizarra({
             )}
           </div>
 
-          {(isAdmin || esMia) && (
+          {isAdmin && (
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               {cerrada ? (
                 <button onClick={() => onCambiarEstado("abierta")} className="btn-secondary !py-2 !text-[14px]">
