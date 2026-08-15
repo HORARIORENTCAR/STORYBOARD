@@ -39,6 +39,38 @@ body {
   .modal-sheet { border-radius: 18px 18px 0 0; }
 }
 
+/* ============ TAMAÑO DE LETRA EN EL CELULAR ============
+
+   Un píxel más en todo lo que se lee. Se hace aquí, en un solo sitio, en vez
+   de ir tocando cincuenta componentes: así ningún archivo se queda atrás y no
+   hay dos escalas conviviendo.
+
+   El corte está en 639px a propósito: es el mismo punto donde empieza `sm:`
+   en las clases, de modo que lo que un componente ya ajusta para pantallas
+   grandes sigue mandando allí y aquí no se pisa nada.
+
+   Los .btn-*, .label, .badge y .section-eyebrow van aparte porque su tamaño
+   nace de @apply dentro del componente, no de la clase .text-sm suelta, y no
+   les llega el ajuste de arriba.                                            */
+@media (max-width: 639px) {
+  .text-xs   { font-size: 13px; line-height: 1.45; }
+  .text-sm   { font-size: 15px; line-height: 1.55; }
+  .text-base { font-size: 17px; line-height: 1.6; }
+
+  .text-\[9px\]  { font-size: 10px; }
+  .text-\[10px\] { font-size: 11px; }
+  .text-\[11px\] { font-size: 12px; }
+  .text-\[13px\] { font-size: 14px; }
+  .text-\[14px\] { font-size: 15px; }
+  .text-\[15px\] { font-size: 16px; }
+  .text-\[17px\] { font-size: 18px; }
+
+  .btn-primary, .btn-secondary, .btn-ghost { font-size: 15px; }
+  .label { font-size: 15px; }
+  .badge { font-size: 12px; }
+  .section-eyebrow { font-size: 13px; }
+}
+
 html { -webkit-text-size-adjust: 100%; }
 body { overscroll-behavior-y: none; }
 button, a { -webkit-tap-highlight-color: rgba(20, 105, 66, 0.12); touch-action: manipulation; }

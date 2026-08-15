@@ -4,8 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Globe, ListChecks, FolderOpen, CalendarDays, MoreHorizontal,
-  ClipboardCheck, History, UserCog, Eye, Users, Settings, LogOut, X, ClipboardList,
+  Globe, CalendarDays, Calendar, MoreHorizontal,
+  History, UserCog, Eye, Users, Settings, LogOut, X, ClipboardList,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { cx } from "@/lib/utils";
@@ -15,20 +15,18 @@ import { Avatar } from "@/components/ui/avatar";
 export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
-  const { currentUser, isAdmin, liveTasks, wallEvents, logout } = useApp();
+  const { currentUser, isAdmin, events, logout } = useApp();
   const [sheet, setSheet] = useState(false);
 
-  const wallIds = new Set(wallEvents.map((e) => e.id));
-  const mine = liveTasks.filter(
-    (t) => wallIds.has(t.eventId) && t.status !== "terminada" && t.slots.some((s) => s.userId === currentUser?.id)
-  ).length;
-
-  const secondary = ["/agenda", "/historial", "/perfil", "/todos", "/equipo", "/configuracion"];
+  /* Los mismos cuatro destinos que en la computadora, con los mismos nombres.
+     Antes esta barra llamaba "Agenda" al calendario, que en el menú de
+     escritorio se llamaba "Calendario": dos nombres para el mismo sitio. */
+  const secondary = ["/historial", "/perfil", "/todos", "/equipo", "/configuracion"];
   const tabs = [
     { href: "/", label: "Muro", icon: Globe },
-    { href: "/tareas", label: "Tareas", icon: ListChecks, count: mine },
-    { href: "/espacio", label: "Mi espacio", icon: FolderOpen },
-    { href: "/calendario", label: "Agenda", icon: CalendarDays },
+    { href: "/eventos", label: "Eventos", icon: CalendarDays, count: events.filter((e) => e.status === "publicado").length },
+    { href: "/calendario", label: "Calendario", icon: Calendar },
+    { href: "/pizarra", label: "La Pizarra", icon: ClipboardList },
   ];
 
   const sheetItem = (href: string, Icon: React.ComponentType<{ className?: string }>, label: string) => (
@@ -115,13 +113,8 @@ export function MobileNav() {
             </div>
 
             <div className="my-2 h-px bg-ink-100" />
-            <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wider text-ink-400">
-              Mi espacio personal
-            </p>
-            {sheetItem("/pizarra", ClipboardList, "La Pizarra")}
-            {sheetItem("/agenda", ClipboardCheck, "Mi agenda")}
-            {sheetItem("/historial", History, "Historial de actividad")}
             {sheetItem("/perfil", UserCog, "Mi perfil")}
+            {sheetItem("/historial", History, "Historial de actividad")}
 
             {isAdmin && (
               <>
