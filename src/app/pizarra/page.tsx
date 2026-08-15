@@ -196,7 +196,7 @@ export default function PizarraPage() {
           <p className="text-[17px] font-semibold text-ink-800">Todavía no hay ninguna pizarra</p>
           <p className="mt-2 max-w-md text-[15px] leading-relaxed text-ink-500">
             {isAdmin
-              ? "Crea la primera con el botón «Nueva pizarra». Se armará sola con los quince cursos del colegio y solo tendrás que escribir qué le toca a cada uno."
+              ? "Crea la primera con el botón «Nueva pizarra». Se armará sola con los cursos del colegio y solo tendrás que escribir qué le toca a cada uno."
               : "La administración creará la primera. Cuando exista, aquí verás qué le toca a tu curso."}
           </p>
         </div>
@@ -228,8 +228,10 @@ export default function PizarraPage() {
       >
         <div className="space-y-4">
           <p className="rounded-xl bg-ink-50 px-4 py-3 text-[15px] leading-relaxed text-ink-600">
-            Se crearán solos los quince cursos del colegio. Después escribes qué le toca a cada
-            uno; los que dejes en blanco simplemente no participan en esta actividad.
+            Se crearán solos los quince cursos del colegio, más cuatro renglones{" "}
+            <b className="font-semibold text-ink-800">Variable</b> para lo que no le toca a un curso
+            fijo: el sonido, las sillas, la comida de los invitados. Después escribes qué le toca a
+            cada uno; los que dejes en blanco simplemente no participan.
           </p>
           <div>
             <label className="label">Nombre de la actividad</label>
@@ -533,12 +535,12 @@ function TarjetaPizarra({
         {sinAsignacion.length > 0 && (
           <div className="bg-ink-50/60 p-4 sm:px-5">
             <p className="mb-1 text-[15px] font-semibold text-ink-700">
-              Cursos sin encargo ({sinAsignacion.length})
+              Sin encargo en esta actividad ({sinAsignacion.length})
             </p>
             <p className="mb-3 text-[14px] leading-relaxed text-ink-500">
               {puedeEscribir
-                ? "Estos cursos aún no participan. Toca uno para darle su encargo."
-                : "Estos cursos no participan en esta actividad."}
+                ? "Todavía no participan. Toca uno para darle su encargo. Los renglones «Variable» sirven para lo que no le toca a un curso fijo."
+                : "No participan en esta actividad."}
             </p>
             <div className="flex flex-wrap gap-2">
               {sinAsignacion.map((fila) =>
