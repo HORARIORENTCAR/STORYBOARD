@@ -125,6 +125,10 @@ export interface AppNotification {
   read: boolean;
   /** "all" = toda la institución · array = solo esas personas */
   audience: "all" | string[];
+  /** A dónde lleva el aviso al tocarlo ("/eventos/123", "/calendario"...).
+      Vacío en los avisos antiguos y en los que no llevan a ninguna parte,
+      como el de un evento que se acaba de eliminar. */
+  link?: string;
 }
 
 /** Nota del mural correspondiente a un mes ("AAAA-MM"). */

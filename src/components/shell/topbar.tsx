@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, Search, ChevronDown, UserCog, History, LogOut, Users2, Building2, ShieldCheck, X, ListChecks, Smartphone } from "lucide-react";
+import { Bell, Search, ChevronDown, ChevronRight, UserCog, History, LogOut, Users2, Building2, ShieldCheck, X, ListChecks, Smartphone } from "lucide-react";
 import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
 import { ChipPruebas } from "@/components/pwa/marca-pruebas";
@@ -20,17 +20,45 @@ export function Topbar() {
   const results = searchAll(query);
   const hasResults = results.events.length + results.tasks.length + results.people.length > 0;
 
-  // Cerrar cualquier panel abierto con la tecla Escape.
+  const cajaNotif = useRef<HTMLDivElement>(null);
+  const cajaMenu = useRef<HTMLDivElement>(null);
+  const cajaBusca = useRef<HTMLDivElement>(null);
+
+  /* Cerrar los paneles al tocar en cualquier otro sitio, o con Escape.
+   *
+   * Antes esto lo intentaba una capa invisible a pantalla completa dentro de
+   * cada panel, y no funcionaba. El motivo: esta barra lleva un desenfoque de
+   * fondo, y en CSS un elemento con desenfoque se convierte en el marco de
+   * referencia de sus hijos posicionados. Aquella capa, que se creía del
+   * tamaño de la pantalla, en realidad solo cubría la franja de la barra, así
+   * que tocar el resto de la aplicación no cerraba nada.
+   *
+   * Escuchando el toque en el documento entero el problema desaparece, y de
+   * paso vale igual para el menú del perfil y el desplegable del buscador.  */
   useEffect(() => {
     if (!notifOpen && !menuOpen && !searchOpen) return;
+
+    const tocoFuera = (caja: React.RefObject<HTMLDivElement>, destino: EventTarget | null) =>
+      caja.current !== null && (!(destino instanceof Node) || !caja.current.contains(destino));
+
+    const alTocar = (e: PointerEvent) => {
+      if (notifOpen && tocoFuera(cajaNotif, e.target)) setNotifOpen(false);
+      if (menuOpen && tocoFuera(cajaMenu, e.target)) setMenuOpen(false);
+      if (searchOpen && tocoFuera(cajaBusca, e.target)) setSearchOpen(false);
+    };
     const alSoltar = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       setNotifOpen(false);
       setMenuOpen(false);
       setSearchOpen(false);
     };
+
+    document.addEventListener("pointerdown", alTocar);
     window.addEventListener("keydown", alSoltar);
-    return () => window.removeEventListener("keydown", alSoltar);
+    return () => {
+      document.removeEventListener("pointerdown", alTocar);
+      window.removeEventListener("keydown", alSoltar);
+    };
   }, [notifOpen, menuOpen, searchOpen]);
 
   function goTo(href: string) {
@@ -45,7 +73,7 @@ export function Topbar() {
       {/* Solo aparece en la copia de pruebas. Va aquí dentro, ocupando su propio
           hueco, para no taparle el paso a ningún botón. */}
       <ChipPruebas />
-      <div className="relative flex-1 max-w-xl">
+      <div ref={cajaBusca} className="relative flex-1 max-w-xl">
         <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
         <input
           className="input pl-10 pr-9"
@@ -78,7 +106,6 @@ export function Topbar() {
 
         {searchOpen && query.trim().length >= 2 && (
           <>
-            <div className="fixed inset-0 z-20" onClick={() => setSearchOpen(false)} />
             <div className="absolute left-0 right-0 z-30 mt-2 max-h-96 overflow-y-auto rounded-2xl border border-ink-100 bg-white p-2 shadow-pop">
               {!hasResults && (
                 <p className="px-2 py-6 text-center text-sm text-ink-400">Sin resultados para “{query}”.</p>
@@ -146,7 +173,7 @@ export function Topbar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        <div className="relative">
+        <div ref={cajaNotif} className="relative">
           <button
             onClick={() => {
               setNotifOpen((v) => !v);
@@ -165,24 +192,36 @@ export function Topbar() {
             )}
           </button>
           {notifOpen && (
-            <>
-              <div className="fixed inset-0 z-20" onClick={() => setNotifOpen(false)} aria-hidden />
-            <div className="absolute right-0 z-30 mt-2 w-80 rounded-2xl border border-ink-100 bg-white p-2 shadow-pop">
+            /* En el celular el panel se despega de la campana y se coloca a lo
+               ancho con el mismo margen a los dos lados. Anclado a la campana,
+               que está pegada al borde derecho, se salía por la izquierda.
+               De 640px en adelante vuelve a colgar de la campana. */
+            <div className="fixed inset-x-3 top-[76px] z-30 rounded-2xl border border-ink-100 bg-white p-2 shadow-pop sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-80">
               <div className="flex items-center justify-between px-2 py-1.5">
                 <p className="text-sm font-semibold text-ink-900">Notificaciones</p>
                 <button onClick={markAllNotificationsRead} className="text-xs font-medium text-brand-700 hover:underline">
                   Marcar todo leído
                 </button>
               </div>
-              <div className="max-h-80 space-y-1 overflow-y-auto">
+              <div className="max-h-[60vh] space-y-1 overflow-y-auto sm:max-h-80">
                 {notifications.length === 0 && (
                   <p className="px-2 py-6 text-center text-sm text-ink-400">No tienes notificaciones.</p>
                 )}
                 {notifications.map((n) => (
                   <button
                     key={n.id}
-                    onClick={() => markNotificationRead(n.id)}
-                    title={n.read ? "Ya leída" : "Marcar como leída"}
+                    onClick={() => {
+                      markNotificationRead(n.id);
+                      /* Si el aviso sabe a dónde lleva, se cierra el panel y se
+                         va allí. Si no lo sabe —los avisos anteriores a este
+                         cambio, o el de algo que se eliminó— solo se marca como
+                         leído y el panel se queda abierto. */
+                      if (n.link) {
+                        setNotifOpen(false);
+                        router.push(n.link);
+                      }
+                    }}
+                    title={n.link ? "Ver lo que pasó" : n.read ? "Ya leída" : "Marcar como leída"}
                     className={cx(
                       "w-full rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-ink-50",
                       !n.read && "bg-brand-50/60"
@@ -203,16 +242,20 @@ export function Topbar() {
                       >
                         {n.audience === "all" ? "Todo el personal" : "Para ti"}
                       </span>
+                      {n.link && (
+                        <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[11px] font-medium text-brand-700">
+                          Ver <ChevronRight className="h-3.5 w-3.5" />
+                        </span>
+                      )}
                     </div>
                   </button>
                 ))}
               </div>
             </div>
-            </>
           )}
         </div>
 
-        <div className="relative">
+        <div ref={cajaMenu} className="relative">
           <button
             onClick={() => {
               setMenuOpen((v) => !v);
@@ -228,9 +271,7 @@ export function Topbar() {
             <ChevronDown className="h-4 w-4 text-ink-400" />
           </button>
           {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} aria-hidden />
-            <div className="absolute right-0 z-30 mt-2 w-72 rounded-2xl border border-ink-100 bg-white p-2 shadow-pop">
+            <div className="fixed inset-x-3 top-[76px] z-30 max-h-[70vh] overflow-y-auto rounded-2xl border border-ink-100 bg-white p-2 shadow-pop sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-none sm:w-72">
               <div className="flex items-center gap-3 rounded-xl bg-ink-50 px-3 py-3">
                 <Avatar name={currentUser?.name ?? ""} color={currentUser?.color} />
                 <div className="min-w-0">
@@ -264,7 +305,6 @@ export function Topbar() {
                 <LogOut className="h-4 w-4" /> Cerrar sesión
               </button>
             </div>
-            </>
           )}
         </div>
       </div>

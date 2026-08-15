@@ -160,6 +160,7 @@ function mapNotification(r: any, readIds: Set<string>): AppNotification {
     createdAt: r.created_at,
     read: readIds.has(r.id),
     audience: r.audience_all ? "all" : (r.audience_users ?? []),
+    link: r.link ?? undefined,
   };
 }
 function mapMonthNote(r: any): MonthNote {
@@ -260,7 +261,10 @@ interface AppContextValue extends StoredState {
     audience?: "all" | "admins" | string[],
     /** Si es true, además del aviso dentro de la app suena en el celular de todos.
         Reservado a lo que interesa a todo el colegio: eventos, calendario y mural. */
-    alCelular?: { url?: string } | false
+    alCelular?: { url?: string } | false,
+    /** A dónde lleva el aviso al tocarlo dentro de la app. Si no se indica y el
+        aviso va al celular, se reutiliza la dirección de aquel: es la misma. */
+    enlace?: string
   ) => Promise<void>;
   setExecStatus: (taskId: string, status: TaskExecStatus) => Promise<string | void>;
   addChatMessage: (
@@ -553,7 +557,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  const notify: AppContextValue["notify"] = useCallback(async (title, detail, audience = "all", alCelular = false) => {
+  const notify: AppContextValue["notify"] = useCallback(async (title, detail, audience = "all", alCelular = false, enlace) => {
     if (!supabase) return;
 
     const paraTodos = audience === "all";
@@ -569,11 +573,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const dest = Array.from(new Set(destinatarios)).filter((id) => id && id !== stateRef.current.currentUserId);
     if (!paraTodos && dest.length === 0) return;
 
+    /* Si el aviso ya sabía a dónde llevar en el celular, ese mismo destino vale
+       dentro de la app: es el mismo sitio. Así los avisos importantes quedaron
+       enlazados sin tener que repetir la dirección en cada llamada. */
+    const destino = enlace ?? (alCelular ? alCelular.url : undefined) ?? null;
+
     await supabase.rpc("notify", {
       p_title: title,
       p_detail: detail,
       p_audience_all: paraTodos,
       p_audience_users: dest,
+      p_link: destino,
     });
 
     /* Aviso al celular. Solo para lo que le importa a todo el colegio, y solo
@@ -610,7 +620,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (target.length === 0) return 0;
     await supabase.from("event_tasks").update({ deadline_notified: true }).in("id", target.map((t) => t.id));
     for (const t of target) {
-      await notify("Fecha límite próxima", `${t.name} — ${dueLabel(t).toLowerCase()}`, taskAudience(t, true));
+      await notify("Fecha límite próxima", `${t.name} — ${dueLabel(t).toLowerCase()}`, taskAudience(t, true), false, `/eventos/${t.eventId}`);
     }
     return target.length;
   }, [state.tasks, state.settings.notifyDeadline, notify, taskAudience]);
@@ -732,9 +742,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (patch.status === "publicado") {
           await notify("Nuevo evento publicado", `${currentUser?.name ?? "Alguien"} publicó ${nombreEv}. Ya puedes inscribirte en sus tareas.`, "all", { url: `/eventos/${id}` });
         } else if (patch.status === "finalizado") {
-          await notify("Evento finalizado", `${nombreEv} se dio por terminado.`, "all");
+          await notify("Evento finalizado", `${nombreEv} se dio por terminado.`, "all", false, `/eventos/${id}`);
         } else if (patch.status === "archivado") {
-          await notify("Evento archivado", `${nombreEv} pasó al archivo.`, "admins");
+          await notify("Evento archivado", `${nombreEv} pasó al archivo.`, "admins", false, `/eventos/${id}`);
         }
       } else {
         logHistory("editó el evento", prevEvent?.name ?? "", "Evento");
@@ -746,7 +756,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           await notify(
             "Cambió una fecha importante",
             `${prevEvent?.name}: ahora es el ${patch.eventDate ?? prevEvent?.eventDate}`,
-            "all"
+            "all",
+            false,
+            `/eventos/${id}`
           );
         }
       }
@@ -852,7 +864,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await notify(
           "Nueva tarea disponible",
           `${row.name} en ${evento.name} · ${max} lugar(es) para colaborar`,
-          "all"
+          "all",
+          false,
+          `/eventos/${data.eventId}`
         );
       }
       return mapTask(row, []);
@@ -916,7 +930,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await notify(
           "Alguien se inscribió",
           `${currentUser?.name ?? "Un colaborador"} se inscribió en ${t.name}`,
-          avisar
+          avisar,
+          false,
+          `/eventos/${t.eventId}`
         );
       }
     },
@@ -936,7 +952,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await notify(
           "Se liberó un lugar",
           `${currentUser?.name ?? "Un colaborador"} canceló su inscripción en ${t.name}`,
-          avisar
+          avisar,
+          false,
+          `/eventos/${t.eventId}`
         );
       }
     },
@@ -1134,7 +1152,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         await notify(
           "Nueva evidencia",
           `${currentUser?.name ?? "Alguien"} subió "${subido.name}" en ${t.name}`,
-          taskAudience(t)
+          taskAudience(t),
+          false,
+          `/eventos/${t.eventId}`
         );
       }
     },
@@ -1496,7 +1516,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const body = await res.json();
       if (!res.ok) return { error: body.error ?? "No se pudo crear la cuenta." };
       logHistory("agregó al colaborador", data.name, "Equipo");
-      await notify("Nueva persona en el equipo", `${currentUser?.name ?? "Alguien"} agregó a ${data.name} (${data.email})`, "admins");
+      await notify("Nueva persona en el equipo", `${currentUser?.name ?? "Alguien"} agregó a ${data.name} (${data.email})`, "admins", false, "/equipo");
       await recargarPersonal();
       return { credenciales: { nombre: data.name, email: body.email, password: body.password } };
     },
@@ -1570,12 +1590,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await notify(
       role === "admin" ? "Nuevo administrador" : "Cambio de rol",
       `${objetivo.name} ahora es ${role === "admin" ? "administrador" : "miembro del equipo"}`,
-      "admins"
+      "admins",
+      false,
+      "/equipo"
     );
     await notify(
       "Tu rol cambió",
       `Ahora eres ${role === "admin" ? "administrador" : "miembro del equipo"} en Staff Board`,
-      [id]
+      [id],
+      false,
+      "/perfil"
     );
   }, [logHistory, notify]);
 
