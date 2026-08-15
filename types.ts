@@ -139,12 +139,7 @@ export interface MonthNote {
 /* Pizarra de asignaciones: la hoja de la pared, hecha aplicación.   */
 /* ---------------------------------------------------------------- */
 
-/** Los cursos del colegio, en el orden en que van en la hoja de papel.
- *
- *  Al final van cuatro renglones "Variable". No son cursos: son espacios
- *  libres para lo que no le toca a ningún curso fijo — el sonido, las sillas,
- *  la comida de los invitados. Van numerados para poder distinguirlos entre
- *  ellos en la lista y al marcarlos. */
+/** Los cursos del colegio, en el orden en que van en la hoja de papel. */
 export const CURSOS = [
   "Párvulo",
   "PreKinder",
@@ -161,10 +156,6 @@ export const CURSOS = [
   "1ero Secundaria",
   "2do Secundaria",
   "3ero Secundaria",
-  "Variable 1",
-  "Variable 2",
-  "Variable 3",
-  "Variable 4",
 ] as const;
 
 export interface PizarraFila {

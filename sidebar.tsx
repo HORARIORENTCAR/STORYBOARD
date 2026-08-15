@@ -5,7 +5,10 @@ import { usePathname } from "next/navigation";
 import {
   LayoutGrid,
   CalendarDays,
+  FolderOpen,
+  ListChecks,
   Calendar,
+  ClipboardCheck,
   History,
   Users,
   Settings,
@@ -20,14 +23,14 @@ import { cx } from "@/lib/utils";
 import { useApp } from "@/lib/store";
 import { Avatar } from "@/components/ui/avatar";
 
-/* Cinco destinos, ni uno más. Se quitaron "Mi espacio", "Mis tareas" y
-   "Mi agenda": eran vistas personales que repetían información que ya está
-   dentro de cada evento, y llenaban el menú sin aportar. */
 const workspaceNav = [
   { href: "/", label: "Muro", icon: LayoutGrid },
   { href: "/eventos", label: "Eventos", icon: CalendarDays, countKey: "events" as const },
+  { href: "/espacio", label: "Mi espacio", icon: FolderOpen },
+  { href: "/tareas", label: "Mis tareas", icon: ListChecks, countKey: "tasks" as const },
   { href: "/calendario", label: "Calendario", icon: Calendar },
-  { href: "/pizarra", label: "La Pizarra", icon: ClipboardList },
+  { href: "/pizarra", label: "Pizarra", icon: ClipboardList },
+  { href: "/agenda", label: "Mi agenda", icon: ClipboardCheck },
   { href: "/historial", label: "Historial", icon: History },
 ];
 
@@ -39,10 +42,14 @@ const adminNav = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { events, currentUser, settings } = useApp();
+  const { events, tasks, currentUser, settings } = useApp();
+
+  const publishedEvents = events.filter((e) => e.status === "publicado").length;
+  const pendingTasks = tasks.filter((t) => t.status !== "terminada").length;
 
   const counts: Record<string, number> = {
-    events: events.filter((e) => e.status === "publicado").length,
+    events: publishedEvents,
+    tasks: pendingTasks,
   };
 
   return (

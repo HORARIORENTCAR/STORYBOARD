@@ -21,22 +21,6 @@ const CONTACTO = process.env.VAPID_CONTACTO ?? "mailto:admin@caracoli.edu.do";
 
 export async function POST(req: NextRequest) {
   try {
-    /* ------------------------------------------------------------------
-       El entorno de pruebas NO le suena el teléfono a nadie.
-
-       Vercel pone VERCEL_ENV en "production", "preview" o "development".
-       Cualquier cosa que no sea producción se queda callada. Esto se decide
-       en el servidor, así que no depende de la dirección que abra la persona
-       ni de nada que el navegador pueda cambiar.
-
-       Si VERCEL_ENV no existe (correr la app en la computadora de uno), sí
-       envía: ahí es donde hace falta poder probarlo.
-       ------------------------------------------------------------------ */
-    const entorno = process.env.VERCEL_ENV;
-    if (entorno && entorno !== "production") {
-      return NextResponse.json({ ok: true, enviados: 0, omitido: "entorno de pruebas" });
-    }
-
     if (!CLAVE_PUBLICA || !CLAVE_PRIVADA) {
       return NextResponse.json(
         { error: "Faltan las claves de aviso (VAPID) en las variables de Vercel." },
