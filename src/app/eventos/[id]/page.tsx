@@ -20,11 +20,11 @@ import {
 } from "lucide-react";
 import { Shell } from "@/components/shell/shell";
 import { useApp } from "@/lib/store";
+import { Avatar } from "@/components/ui/avatar";
 import { colorTokens, cx, formatFullDate } from "@/lib/utils";
 import { eventProgress } from "@/lib/task-helpers";
 import { EventStatusPill } from "@/components/ui/pills";
 import { ProgressBar } from "@/components/ui/progress";
-import { Avatar } from "@/components/ui/avatar";
 import { TaskCard } from "@/components/tasks/task-card";
 import { EventFormModal } from "@/components/events/event-form-modal";
 import { TaskFormModal } from "@/components/tasks/task-form-modal";
@@ -39,7 +39,7 @@ const columns: { key: TaskExecStatus; label: string }[] = [
 export default function EventDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { eventById, tasksForEvent, userById, canSeeEvent, canEditEvent, updateEvent, deleteEvent, duplicateEvent, loading, settings, llevarEventoAlCalendario, quitarEventoDelCalendario, fechaDeEvento } = useApp();
+  const { eventById, tasksForEvent, userById, canSeeEvent, canEditEvent, currentUser, updateEvent, deleteEvent, duplicateEvent, loading, settings, llevarEventoAlCalendario, quitarEventoDelCalendario, fechaDeEvento } = useApp();
   const [editOpen, setEditOpen] = useState(false);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
   const [aviso, setAviso] = useState("");
@@ -87,6 +87,26 @@ export default function EventDetailPage() {
   const tokens = colorTokens[event.color];
   const creator = userById(event.createdBy);
   const editable = canEditEvent(event);
+  const esCreador = event.createdBy === currentUser?.id;
+
+  /* Quiénes participan en el evento: todas las personas inscritas en cualquiera
+     de sus tareas, con las tareas que tomaron. Se calcula a partir de los cupos,
+     que es la fuente de verdad de quién se comprometió a qué. */
+  const participantes = (() => {
+    const mapa = new Map<string, { id: string; tareas: string[] }>();
+    tasks.forEach((t) => {
+      t.slots.forEach((cupo) => {
+        if (!cupo.userId) return;
+        const ficha = mapa.get(cupo.userId) ?? { id: cupo.userId, tareas: [] };
+        if (!ficha.tareas.includes(t.name)) ficha.tareas.push(t.name);
+        mapa.set(cupo.userId, ficha);
+      });
+    });
+    return Array.from(mapa.values());
+  })();
+
+  /** ¿Esta persona ya se comprometió con alguna tarea del evento? */
+  const estoyInscrito = participantes.some((p) => p.id === currentUser?.id);
   /** ¿Este evento ya tiene su fecha puesta en el calendario del colegio? */
   const yaEnCalendario = !!fechaDeEvento(event.id);
   const eventoCerrado = event.status === "finalizado" || event.status === "archivado";
@@ -132,7 +152,12 @@ export default function EventDetailPage() {
   }
 
   function handleDelete() {
-    if (!window.confirm(`¿Eliminar "${event!.name}"? Se borrarán también sus tareas, chats y evidencias. No se puede deshacer.`)) return;
+    /* Si el evento está anunciado en el calendario del colegio, hay que decirlo:
+       la fecha NO se borra sola, se queda ahí como fecha suelta. */
+    const aviso = yaEnCalendario
+      ? ` Está anunciado en el calendario del colegio: esa fecha se quedará ahí como fecha normal, sin enlace al evento. Si no la quieres, quítala antes desde el botón "Quitar del calendario".`
+      : "";
+    if (!window.confirm(`¿Eliminar "${event!.name}"? Se borrarán también sus tareas, chats y evidencias. No se puede deshacer.${aviso}`)) return;
     deleteEvent(event!.id);
     router.push("/eventos");
   }
@@ -236,6 +261,16 @@ export default function EventDetailPage() {
               )}
               {/* Llevar al calendario: siempre a petición, nunca automático.
                   Si ya está, el mismo botón sirve para quitarlo. */}
+              {yaEnCalendario && (
+                <Link
+                  href="/calendario"
+                  title="Ver esta fecha en el calendario del colegio"
+                  className="btn-secondary"
+                >
+                  <CalendarClock className="h-4 w-4" /> Ver en el calendario
+                </Link>
+              )}
+
               {yaEnCalendario ? (
                 <button
                   onClick={async () => {
@@ -300,6 +335,91 @@ export default function EventDetailPage() {
           </div>
           <ProgressBar value={progress} colorClass={tokens.solid} />
         </div>
+      </div>
+
+      {/* Quiénes participan. Visible para todo el personal: saber quién está
+          dentro es justo lo que ayuda a decidir si uno se suma. */}
+      <div className="card mb-6 p-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="section-eyebrow">Quiénes participan</p>
+            <h2 className="text-lg font-bold text-ink-900">
+              {participantes.length === 0
+                ? "Todavía nadie se ha inscrito"
+                : `${participantes.length} ${participantes.length === 1 ? "persona inscrita" : "personas inscritas"}`}
+            </h2>
+          </div>
+          {estoyInscrito && (
+            <span className="badge shrink-0 bg-brand-100 text-brand-800">
+              <CheckCircle2 className="h-3 w-3" /> Estás dentro
+            </span>
+          )}
+        </div>
+
+        {participantes.length === 0 ? (
+          <p className="text-sm text-ink-500">
+            Cuando alguien ocupe un lugar en una tarea, aparecerá aquí. Mira las tareas de abajo y
+            toma la que puedas.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {participantes.map((p) => {
+              const persona = userById(p.id);
+              return (
+                <div
+                  key={p.id}
+                  className="flex items-start gap-3 rounded-xl border border-ink-100 px-3.5 py-3"
+                >
+                  <Avatar name={persona?.name ?? "?"} color={persona?.color} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-ink-900">
+                      {persona?.name ?? "Alguien"}
+                      {p.id === event.createdBy && (
+                        <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                          Creador
+                        </span>
+                      )}
+                    </p>
+                    {persona?.title && <p className="truncate text-xs text-ink-500">{persona.title}</p>}
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {p.tareas.map((nombre) => (
+                        <span
+                          key={nombre}
+                          className="max-w-full truncate rounded-md bg-ink-100 px-1.5 py-0.5 text-[11px] text-ink-600"
+                        >
+                          {nombre}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Qué puede hacer quien está mirando. Las reglas invisibles confunden. */}
+        <p className="mt-4 border-t border-ink-100 pt-3 text-xs leading-relaxed text-ink-500">
+          {esCreador ? (
+            <>
+              <strong className="text-ink-700">Eres quien creó este evento.</strong> Solo tú (y la
+              administración del colegio) pueden publicarlo, editarlo, llevarlo al calendario o
+              eliminarlo.
+            </>
+          ) : editable ? (
+            <>
+              <strong className="text-ink-700">Estás actuando como administrador.</strong> Puedes
+              gestionar este evento aunque no sea tuyo; úsalo con cuidado, porque su creador es{" "}
+              {creator?.name ?? "otra persona"}.
+            </>
+          ) : (
+            <>
+              Puedes ver el evento e inscribirte en sus tareas. Publicarlo, editarlo o eliminarlo
+              queda reservado a quien lo creó
+              {creator ? <> ({creator.name})</> : null} y a la administración.
+            </>
+          )}
+        </p>
       </div>
 
       <div className="mb-5 flex items-center justify-between">
